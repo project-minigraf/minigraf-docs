@@ -190,12 +190,46 @@ fn rewrite_link<'a>(
     }))
 }
 
+/// The retired GitHub wiki. Links to its pages (from snapshot files written before the wiki
+/// moved here) become links to the same page in the version being read.
+const WIKI_PREFIX: &str = "https://github.com/project-minigraf/minigraf/wiki/";
+/// The site's own permalinks, as the minigraf repository links to them.
+const LATEST_PREFIX: &str = "https://project-minigraf.github.io/minigraf-docs/latest/";
+
 fn resolve_link(
     url: &str,
     slugs: &BTreeSet<String>,
     mode: &LinkMode<'_>,
     links: &mut BTreeSet<Link>,
 ) -> Result<String> {
+    if let Some(rest) = url.strip_prefix(LATEST_PREFIX) {
+        let (page, anchor) = rest.split_once('#').unwrap_or((rest, ""));
+        let slug = page.trim_end_matches('/');
+        if slugs.contains(slug) {
+            let local = if anchor.is_empty() {
+                slug.to_string()
+            } else {
+                format!("{slug}#{anchor}")
+            };
+            return resolve_link(&local, slugs, mode, links);
+        }
+    }
+    if let Some(rest) = url.strip_prefix(WIKI_PREFIX) {
+        let (page, anchor) = rest.split_once('#').unwrap_or((rest, ""));
+        let slug = if page.is_empty() {
+            "home".to_string()
+        } else {
+            page.to_lowercase()
+        };
+        if slugs.contains(&slug) {
+            let local = if anchor.is_empty() {
+                slug
+            } else {
+                format!("{slug}#{anchor}")
+            };
+            return resolve_link(&local, slugs, mode, links);
+        }
+    }
     if url.contains("://") || url.starts_with("mailto:") || url.starts_with('/') {
         return Ok(url.to_string());
     }
@@ -475,6 +509,36 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn wiki_links_become_page_links() {
+        let mut ids = IdAllocator::default();
+        let r = render(
+            "[w](https://github.com/project-minigraf/minigraf/wiki/Datalog-Reference#negation) \
+             [o](https://github.com/project-minigraf/minigraf/wiki/Some-Other-Page)",
+            &slugs(),
+            &mut ids,
+            Window::ALL,
+            false,
+            &LinkMode::Authored,
+        )
+        .unwrap();
+        assert!(r.html.contains("href=\"../datalog-reference/#negation\""));
+        assert!(r.html.contains(
+            "href=\"https://github.com/project-minigraf/minigraf/wiki/Some-Other-Page\""
+        ));
+        assert_eq!(r.links.len(), 1);
+        let r = render(
+            "[l](https://project-minigraf.github.io/minigraf-docs/latest/datalog-reference/#negation)",
+            &slugs(),
+            &mut ids,
+            Window::ALL,
+            false,
+            &LinkMode::Authored,
+        )
+        .unwrap();
+        assert!(r.html.contains("href=\"../datalog-reference/#negation\""));
     }
 
     #[test]
