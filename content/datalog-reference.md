@@ -167,6 +167,21 @@ clause in the same `:where` or rule body (forward-pass check):
 
 A binding expression `[(expr) ?out]` adds `?out` to the bound set for subsequent clauses.
 
+<!-- @since v3.0.0 -->
+### `:find` variables must be bound
+
+Every variable in `:find` must be bound by the `:where` clauses; otherwise the query fails at parse time with `PRS-080`, naming the variable. This covers `execute()`, `query()` and `prepare()`, and a window function's argument, `:partition-by` and `:order-by` variables too. A variable counts as bound when it appears in a pattern, a rule call, an expression binding, an `or-join` join vector, or every branch of an `or`. One that appears only inside `not` / `not-join`, or a `?_` wildcard, does not.
+
+```datalog
+;; INVALID — ?nmae is a typo; nothing binds it (PRS-080)
+(query [:find ?nmae :where [?e :person/name ?name]])
+```
+
+<!-- @end -->
+<!-- @until v3.0.0 -->
+A `:find` variable that no `:where` clause binds is not rejected: the query returns no results, so a typo in `:find` looks the same as "no matching data". From v3.0.0 this is an error (`PRS-080`).
+
+<!-- @end -->
 ### Aggregate and `:with` binding
 
 - Every variable appearing in an aggregate `(count ?x)` must be bound in `:where`.
@@ -262,6 +277,35 @@ Entities are UUIDs internally; you can use keywords as shorthand in the REPL (th
 ```
 
 Valid-time values are ISO 8601 strings (`"2024-01-15"` or `"2024-01-15T10:00:00Z"`). Omitting `:valid-to` leaves it open-ended (valid forever).
+
+<!-- @since v3.0.0 -->
+### One current valid-time window per fact
+
+At any transaction time, each `(entity, attribute, value)` has exactly one current valid-time window: the one from its latest `transact`. A later assertion of the same fact replaces the earlier window, which stays visible through `:as-of` of the earlier transaction. Closing, extending or reopening a window is a plain `transact` with the new bounds; `retract` withdraws the fact.
+
+```datalog
+(transact {:valid-from "2023-06-01"} [[:alice :works-at :startupco]])                       ;; open-ended
+(transact {:valid-from "2023-06-01" :valid-to "2025-12-31"} [[:alice :works-at :startupco]])  ;; now closed
+
+(query [:find ?co :valid-at "2026-03-01" :where [:alice :works-at ?co]])
+;; => no rows: the closed window replaced the open one
+```
+
+A fact that was true over two separate periods cannot have both windows current at once. Model each period as its own entity, or read earlier periods with `:as-of`. Asserting one fact with two different windows in a single `transact` fails with `API-011` and writes nothing.
+
+### Empty windows are rejected
+
+A `transact` whose effective window for any fact ends at or before it starts fails with `API-019`, writes nothing and takes no transaction number. The effective window is the one after defaults, so `(transact {:valid-to "2020-01-01"} ...)` is rejected too: its `:valid-from` is the transaction time.
+<!-- @end -->
+<!-- @until v3.0.0 -->
+### Known issues with valid time in v2.x
+
+- A later assertion of the same `(entity, attribute, value)` with a different window does not replace the earlier window: every window ever asserted stays current until a `retract` ([#435](https://github.com/project-minigraf/minigraf/issues/435)). To close or change a window, retract the fact first, then assert it with the new window (see [Closing an open-ended fact](cookbook-bitemporal-modeling#recipe-7--closing-an-open-ended-fact)).
+- A window that ends at or before it starts is stored, never matches `:valid-at`, and still shows up under `:any-valid-time`.
+- Two values of one attribute written in the same transaction can read back as one value ([#371](https://github.com/project-minigraf/minigraf/issues/371)). Write them in separate transactions.
+
+All are fixed in v3.0.0. Every v2.x known issue is listed in [#421](https://github.com/project-minigraf/minigraf/issues/421).
+<!-- @end -->
 
 ---
 
@@ -696,6 +740,14 @@ Use in a `:where` clause as a single-argument filter:
 ### Runtime Resolution
 
 Unknown function names in `:find` aggregates, `:over` window clauses, and `[(name? ?var)]` filter expressions are **not rejected at parse time** — the parser emits `WindowFunc::Udf(name)`, `UnaryOp::Udf(name)`, etc. and defers validation to execution. If the name is not registered when the query runs, the executor returns an `Err` with a clear message.
+<!-- @since v3.0.0 -->
+
+Aggregate and window function names are resolved when the query starts, before any row is read: an unknown aggregate fails with `QRY-010` and an unknown window function with `QRY-011`, even on an empty database or when no row matches.
+<!-- @end -->
+<!-- @until v3.0.0 -->
+
+An unknown aggregate or window function is only reported once a row reaches it (as `INT-029` / `INT-030`); a query where no row matches returns an empty result instead.
+<!-- @end -->
 
 This means queries referencing UDFs can be parsed and stored before the UDF is registered, and will succeed once registration occurs.
 
@@ -879,6 +931,23 @@ let r2 = pq.execute(&[
 - `PreparedQuery` holds `Arc` clones of the live fact store — each `execute()` sees the current state (including facts transacted after `prepare()`)
 - `db.execute(str)` string API is unchanged — no breaking change
 - `BindValue::AnyValidTime` is the programmatic equivalent of writing `:any-valid-time` in the query string
+<!-- @since v3.0.0 -->
+
+### Cursors
+
+`db.query(str)` and `pq.query(&binds)` return a `Cursor` that hands rows back in batches: `vars()`, `next_batch(max_rows)`, `close()`, and an iterator over rows. The answer is fixed when the cursor opens, so writes that commit while it is open do not change it. A cursor borrows nothing from the database handle: it can outlive it and move to another thread. For now the answer is still computed when the cursor opens, under the same limits as `execute()`.
+
+```rust
+let mut cursor = db.query("(query [:find ?n :where [?e :person/name ?n]])")?;
+while let Some(batch) = cursor.next_batch(1000)? {
+    for row in batch.rows() {
+        // ...
+    }
+}
+```
+
+`query()` accepts only queries: `transact`, `retract` and `rule` fail with `API-012`, and `db.query()` with bind slots fails with `API-010` (use `prepare()`). In the browser, `BrowserDb.query(datalog)` returns a `BrowserCursor` with `vars()`, `nextBatch(maxRows)` and `close()`.
+<!-- @end -->
 
 ---
 
@@ -892,6 +961,13 @@ tx.commit()?;   // or tx.rollback()
 ```
 
 All operations within a `WriteTransaction` are atomic. On rollback or drop without commit, all changes are discarded.
+
+<!-- @since v3.0.0 -->
+When several statements in one `WriteTransaction` write the same `(entity, attribute, value)`, in any mix of `transact` and `retract`, the last of them decides it at commit. A fact retracted and then asserted again in one transaction is live after `commit()`, as it reads inside the transaction. Two windows of one fact in separate statements commit the later window. Two windows of one fact inside one `transact` fail with `API-011`; `tx.execute()` stages nothing for that statement and the transaction stays usable.
+<!-- @end -->
+<!-- @until v3.0.0 -->
+Known issue ([#477](https://github.com/project-minigraf/minigraf/issues/477)): the commit stamps every record with one transaction number, and a retraction always wins. A fact retracted and then asserted again in one `WriteTransaction` reads as live before `commit()` and is gone after it. Fixed in v3.0.0.
+<!-- @end -->
 
 ---
 
@@ -911,7 +987,12 @@ Multi-line input is supported — press Enter on an incomplete expression to con
 
 ## Constraints and Limits
 
+<!-- @until v3.0.0 -->
 - **Max fact size (file-backed)**: 4 080 serialised bytes per fact. Facts that exceed this are rejected at insertion with a clear error. In-memory databases have no limit.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+- **Max value sizes (file-backed)**: a string value up to 4,068 bytes, whatever the rest of the fact; an attribute name or keyword value up to 1,024 bytes. Both are checked when the transaction is written and fail with `WAL-003`, which names the value. In-memory databases have no limit.
+<!-- @end -->
 - **Entities**: UUIDs internally; keywords in the REPL resolve to stable per-session UUIDs.
 - **Timestamps**: UTC only (`"2024-01-15T10:00:00Z"` or date-only `"2024-01-15"`).
 - **Rule arity**: rule invocations take one or two arguments (`INT-028` otherwise).

@@ -199,6 +199,10 @@ fn resolve_link(
     if url.contains("://") || url.starts_with("mailto:") || url.starts_with('/') {
         return Ok(url.to_string());
     }
+    // Site tools (diff/, console/): pages are always two levels below the root.
+    if let Some(rest) = url.strip_prefix("site:") {
+        return Ok(format!("../../{rest}"));
+    }
     let (path, anchor) = match url.split_once('#') {
         Some((p, a)) => (p, Some(a.to_string())),
         None => (url, None),
@@ -450,6 +454,16 @@ mod tests {
         assert!(r.html.contains("href=\"#local\""));
         assert!(r.html.contains("href=\"https://example.com\""));
         assert_eq!(r.links.len(), 2);
+        let r = render(
+            "[d](site:diff/)",
+            &slugs(),
+            &mut ids,
+            Window::ALL,
+            false,
+            &LinkMode::Authored,
+        )
+        .unwrap();
+        assert!(r.html.contains("href=\"../../diff/\""));
         assert!(
             render(
                 "[x](nope)",

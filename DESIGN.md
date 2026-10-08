@@ -60,7 +60,7 @@ whole Markdown blocks: a list split by an annotation renders as two lists.
 
 Links between pages use the target's slug: `[negation](datalog-reference#negation)`. The builder
 rewrites them to `../datalog-reference/#negation` (so they stay in the current version) and fails
-the build when a link points at a page or heading that does not exist in that version.
+the build when a link points at a page or heading that does not exist in that version. Links to the site's tools use `site:`, e.g. `[What changed](site:diff/)`.
 
 ### Snapshot pages (`snapshots.toml`)
 

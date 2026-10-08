@@ -125,6 +125,13 @@ async function renderPageDiff(db, slug, title, a, b) {
   }
   flushSame();
   await Promise.all(pending);
+  // Fragment links are relative to a versioned page; resolve them against version b's page.
+  const holder = document.createElement("div");
+  holder.innerHTML = items.join("");
+  for (const link of holder.querySelectorAll("a[href]")) {
+    const href = link.getAttribute("href");
+    if (!/^([a-z]+:|#|\/)/i.test(href)) link.href = new URL(href, pageHref(b, slug)).href;
+  }
   return {
     added,
     removed,
@@ -132,7 +139,7 @@ async function renderPageDiff(db, slug, title, a, b) {
       `<section class="diff-page" id="page-${escapeHtml(slug)}">` +
       `<h2><a href="${pageHref(b, slug)}">${inlineTitle(title)}</a>` +
       `<span class="diff-counts"><span class="plus">+${added}</span> <span class="minus">−${removed}</span></span></h2>` +
-      `<div class="diff-body">${items.join("")}</div></section>`,
+      `<div class="diff-body">${holder.innerHTML}</div></section>`,
   };
 }
 

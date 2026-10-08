@@ -6,6 +6,7 @@ order: 20
 ---
 ## Module Structure
 
+<!-- @until v3.0.0 -->
 ```
 src/
 ├── main.rs                     — binary entry point (interactive REPL)
@@ -46,6 +47,50 @@ src/
         ├── memory.rs           — MemoryBackend: in-memory backend for testing
         └── fault_inject.rs     — FaultInjectingBackend: injects I/O errors for durability tests (test builds only)
 ```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```
+src/
+├── main.rs                     — binary entry point (interactive REPL)
+├── lib.rs                      — public API exports
+├── db.rs                       — public embedded API: Minigraf, OpenOptions (incl. read_only), WriteTransaction, IntegrityReport; execute / query / fact_log / prepare / begin_write / checkpoint / verify / rebuild_indexes; register_aggregate / register_predicate for UDFs
+├── cursor.rs                   — Cursor / Batch: owned, Send cursor returned by Minigraf::query and PreparedQuery::query
+├── fact_log.rs                 — FactLog / FactFilter / FactRecord / FactOrder: every fact version, streamed without Datalog
+├── log_writer.rs               — LogWriter: builds a new file from FactRecords, keeping their tx and valid time
+├── repl.rs                     — interactive Datalog REPL console
+├── temporal.rs                 — UTC timestamp parsing (avoids chrono CVE GHSA-wcg3-cvx6-7396)
+├── wal.rs                      — write-ahead log (version 2 header with base generation), CRC32 entries; not built for wasm32
+├── error.rs                    — structured error codes: MinigrafError, ErrorCategory, ErrorCode registry (PRS/QRY/STG/WAL/API/INT); matches docs/ERROR_REFERENCE.md
+├── browser/                    — browser WASM backend (`browser` feature)
+│   ├── buffer.rs               — BrowserBufferBackend: in-memory pages with dirty-page tracking
+│   └── indexeddb.rs            — IndexedDB persistence; BrowserDb.query returns a BrowserCursor
+├── graph/
+│   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
+│   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
+├── query/datalog/              — parser, executor, matcher, evaluator, stratification, rules, functions, optimizer, prepared, magic_sets, types (as in v2.x)
+└── storage/
+    ├── mod.rs                  — StorageBackend trait, CommittedReader trait, LegacyHeaderV7 (v7 migration only)
+    ├── persistent_facts.rs     — PersistentFactStorage: v8 save/load, copy-on-write checkpoint, v7 → v8 migration
+    ├── meta.rs                 — meta pages A/B: the only commit point
+    ├── page.rs                 — 24-byte common page header (type, count, CRC32, page id, generation), page allocator
+    ├── freelist.rs             — free-list chain of reusable pages
+    ├── keys.rs                 — byte-comparable keys: FDB integers, value tags, tx↓, FOREVER; MAX_VALUE_BYTES, MAX_IDENT_BYTES
+    ├── node.rs                 — prefix-compressed leaves and shortest-separator internal nodes
+    ├── btree.rs                — on-disk B+tree over byte keys: build_btree, cow_insert, LeafCursor (seek, prefix_scan, get)
+    ├── dict.rs                 — DICT tree: entity and ident ids, tx timestamps, long values; checkpoint-time Encoder
+    ├── value_pages.rs          — append-only pages for strings over 64 bytes
+    ├── reader.rs               — OnDiskReader: covering reads of committed facts; net-assert on index keys
+    ├── verify.rs               — integrity walk for Minigraf::verify and the source choice for rebuild_indexes
+    ├── index.rs                — in-memory keys of the pending (uncheckpointed) EAVT/AEVT indexes
+    ├── cache.rs                — LRU page cache: approximate-LRU, read-lock on hits
+    ├── dir_sync.rs             — fsyncs the parent directory after creating or deleting a file
+    ├── packed_pages.rs         — v7 fact pages, read only to migrate a v7 file
+    └── backend/
+        ├── file.rs             — FileBackend: single .graph file, cross-platform
+        ├── memory.rs           — MemoryBackend: in-memory backend for testing
+        └── fault_inject.rs     — FaultInjectingBackend: injects I/O errors for durability tests (test builds only)
+```
+<!-- @end -->
 
 ### Language bindings (separate repositories)
 
@@ -113,7 +158,12 @@ enum Value {
        ↕ WAL sidecar (wal.rs)
 ```
 
+<!-- @until v3.0.0 -->
 Pending (uncommitted) facts live in memory. Committed facts are stored in packed pages on disk and resolved on demand via the `CommittedFactReader` trait — no load-all at startup. Index lookups go through `OnDiskIndexReader` (Phase 6.5), which traverses B+tree pages via the LRU cache; index memory usage is O(cache_pages), not O(facts).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+Pending (uncheckpointed) facts live in memory, indexed by entity and by attribute. Committed facts live only in the on-disk covering indexes: every index entry is a whole fact, so a read touches index leaves, the dictionary pages that translate its ids, and a value page for a long string, all through the LRU cache (`OnDiskReader`, through the `CommittedReader` trait). Nothing is loaded at startup, and memory is O(cache pages), not O(facts).
+<!-- @end -->
 
 ### Covering indexes
 
@@ -126,27 +176,18 @@ Four Datomic-style covering indexes are maintained for each committed fact:
 | AVET | attribute → value → entity → tx | value equality lookups |
 | VAET | value → attribute → entity → tx | reverse ref lookups |
 
+<!-- @until v3.0.0 -->
 Each index entry is a `FactRef { page_id, slot_index }` — a pointer to the fact's location in the packed pages. Values are encoded with sort-order-preserving byte representation so range scans work correctly.
 
-#### Index keys in v3.0.0
-
-> **Goes live in v3.0.0.** v2.x keeps the v7 layout above. In v7, `EavtKey` and `AevtKey` carry no value, so two values of one attribute written in the same transaction share a key, and reads can return only one of them (#371, #287).
-
-From v3.0.0 every index entry *is* the whole fact, as a byte-comparable key, and `FactRef` is gone. See [File format v8](#file-format-v8--goes-live-in-v300).
-
----|---|---|
-| EAVT | entity, attribute, valid_from, valid_to, tx_count | … + **value_bytes, asserted** |
-| AEVT | attribute, entity, valid_from, valid_to, tx_count | … + **value_bytes, asserted** |
-| AVET | attribute, value_bytes, valid_from, valid_to, entity, tx_count | … + **asserted** |
-| VAET | ref_target, attribute, valid_from, valid_to, source_entity, tx_count | … + **asserted** |
-
-- The new fields are **appended**, so entity and attribute range scans keep the same order. `value_bytes` is `encode_value(&value)`.
-- `asserted` keeps an assertion and a retraction of the same value in the same transaction apart.
-- Keys are built only through per-key constructors (`EavtKey::from_fact`, `EavtKey::entity_start`, `AevtKey::attribute_start`, …). Lookups scan from a start key and stop at the first non-matching key.
-- The query-time deduplication in `selective_fact_fetch` also uses the full fact identity `(entity, attribute, tx_count, asserted, value, valid_from, valid_to)`.
+In v7, `EavtKey` and `AevtKey` carry no value, so two values of one attribute written in the same transaction share a key, and reads can return only one of them. This is known issue [#371](https://github.com/project-minigraf/minigraf/issues/371), fixed in v3.0.0.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+Each index entry *is* the whole fact, as a byte-comparable key, so a query never reads a separate fact page. See [File format (v8)](#file-format-v8) for the key layout. Two values of one attribute written in the same transaction are separate keys, and an assertion and a retraction of the same value in one transaction stay apart.
+<!-- @end -->
 
 ---
 
+<!-- @until v3.0.0 -->
 ## File Format (v7)
 
 The `.graph` file is page-based (4KB pages), endian-safe, cross-platform.
@@ -189,9 +230,11 @@ Index pages (after fact pages): proper on-disk B+tree nodes (btree_v6.rs)
 
 **Migration**: `from_bytes` auto-migrates v1/v2/v3/v4/v5/v6 headers on open. v6 databases migrate to v7 on first checkpoint (header_checksum field added).
 
-### File format v8 — goes live in v3.0.0
+<!-- @end -->
+<!-- @since v3.0.0 -->
+## File Format (v8)
 
-> **Not in any v2.x release.** Built on the `v3` branch for v3.0.0 (#374, #434, #388, #433, design: `docs/superpowers/specs/2026-10-05-v8-storage-format-design.md`). Until v3.0.0 ships, the current format is v7 as described above.
+The `.graph` file is page-based (4KB pages), endian-safe, cross-platform. The design is in `docs/superpowers/specs/2026-10-05-v8-storage-format-design.md` (#374, #434, #388, #433).
 
 **Layout.**
 
@@ -255,11 +298,8 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 - v1–v6 fail with `STG-028`: open them once with v2.x first.
 - Development builds of v3.0.0 from before this format fail with `STG-032`.
 
-**Modules (v3.0.0, `src/storage/`):**
-- `keys.rs`, `node.rs`, `btree.rs`: keys, nodes, the tree with `cow_insert` and `LeafCursor`.
-- `dict.rs`, `value_pages.rs`, `reader.rs`: dictionary and encoder, long values, covering reads.
-- `meta.rs`, `page.rs`, `freelist.rs`: meta pages, page header and allocator, free list.
-- `packed_pages.rs`: v7 reader for migration.
+**Checking a file.** `Minigraf::verify()` walks every committed page and reports logical damage that page checksums cannot see: indexes that disagree (`STG-038`), keys out of order or a page reached twice (`STG-039`), dictionary maps that disagree (`STG-040`), and leaked or doubly used pages (`STG-035`). `Minigraf::rebuild_indexes()` rebuilds the four indexes from an intact one and commits like a checkpoint; if none can serve as the source it fails with `STG-041` and writes nothing.
+<!-- @end -->
 
 ---
 
@@ -267,15 +307,31 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 
 The WAL sidecar (`<db>.wal`) is present whenever there are uncommitted writes. It is replayed on open and deleted on checkpoint.
 
+<!-- @until v3.0.0 -->
 ```
 WAL file layout:
-  Header: magic "MWAL", version u32
+  Header: magic "MWAL", version u32 (1)
   Entries (repeated):
     checksum u32     — CRC32 of the rest of the entry
     tx_count u64     — transaction counter
     num_facts u64    — number of facts in this entry
     [ len u32 | postcard-bytes ]×num_facts
 ```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```
+WAL file layout:
+  Header (32 bytes): magic "MWAL", version u32 (2),
+                     base_generation u64 (the meta generation the WAL extends), 16 reserved bytes
+  Entries (repeated):
+    checksum u32     — CRC32 of the rest of the entry
+    tx_count u64     — transaction counter
+    num_facts u64    — number of facts in this entry
+    [ len u32 | postcard-bytes ]×num_facts
+```
+
+On open, the WAL is replayed only on top of the generation it was written against. A version 1 WAL from v2.x next to a file migrated from v7 is still replayed.
+<!-- @end -->
 
 CRC32-protected entries ensure partial writes (from crashes) are safely discarded. Every WAL write is followed by a flush to disk, controlled by `OpenOptions::synchronous` (see [Performance Tuning](performance-tuning#configuration-knobs)):
 
@@ -290,9 +346,20 @@ CRC32-protected entries ensure partial writes (from crashes) are safely discarde
 
 1. **Parse** — EDN string → `DatalogQuery`; `not` / `not-join` / `Expr` clauses safety-checked at this stage; regex patterns in `matches?` validated at parse time
 2. **Plan** — `optimizer.rs` selects an index hint and reorders join clauses by selectivity; `Expr` clauses are passed through unchanged (not reordered — ordering guaranteed by safety check)
+<!-- @until v3.0.0 -->
 3. **Execute** — `executor.rs` iterates patterns, resolves `FactRef`s via page cache, applies temporal filter:
+<!-- @end -->
+<!-- @since v3.0.0 -->
+3. **Execute** — `executor.rs` iterates patterns over the covering indexes (committed entries that net-assert would hide are skipped on the index keys, before any fact is decoded), then applies the temporal filter:
+<!-- @end -->
    - Step 1: tx-time filter (`:as-of` counter or timestamp)
    - Step 2: net-assertion filter — per `(entity, attribute, value)` triple, keep only the latest `tx_count`; discard if that record is a retraction (`asserted = false`)
+<!-- @until v3.0.0 -->
+     (Known issue [#435](https://github.com/project-minigraf/minigraf/issues/435): v2.x keeps the latest record per valid-time window rather than per triple, so a later assertion of the same fact with a different window does not replace the earlier window. Fixed in v3.0.0.)
+<!-- @end -->
+<!-- @since v3.0.0 -->
+     The latest assertion's window is the fact's only current valid-time window; earlier windows stay visible through `:as-of` (#435).
+<!-- @end -->
    - Step 3: valid-time filter (`:valid-at` or `:any-valid-time`)
    - Step 4: not / not-join post-filter — applied per candidate binding after pattern matching
    - Step 5: `Expr` clause evaluation (`apply_expr_clauses`) — filter predicates drop non-truthy rows; arithmetic bindings extend the binding with the result value; type mismatches and div/0 silently drop the row
@@ -339,6 +406,10 @@ subprocess holds a duplicate of someone else's lock — the same class of
 problem SQLite's `busy_timeout` solves. A same-process conflict is not
 retried; it fails immediately, since waiting could never help.
 
+<!-- @since v3.0.0 -->
+**Read-only opens.** `OpenOptions::read_only(true)` takes the lock in shared mode instead. Any number of read-only handles, in this process or others, can hold the file at once; they exclude a read-write open and it excludes them (`STG-025` / `STG-026`). Nothing done through a read-only handle writes to the `.graph` file or its WAL: a WAL left by an earlier session is applied in memory only, a v7 file is read into memory instead of migrated, writes fail with `API-014`, and a missing file is `STG-042`.
+
+<!-- @end -->
 **One handle per file, per process.** A second `open` on a file this process
 already has open is refused, naming the same-process case. This matters because
 each `FileBackend` caches its own `header.page_count`, allocates new pages from
@@ -359,4 +430,7 @@ existing handle is always the right move (#304).
 - Function registry (`FunctionRegistry`) is `Arc<RwLock<FunctionRegistry>>` — shared between all query executions; built-in aggregates registered at startup; user-defined aggregates and predicates registered via `register_aggregate` / `register_predicate` (Phase 7.7b)
 - Page cache uses read-lock on hits, write-lock only on misses — minimises contention for read-heavy workloads
 - `BrowserDb` (`wasm32-unknown-unknown`) runs single-threaded — all `Arc`/`RwLock`/`Mutex` calls compile as single-threaded stubs under the `browser` feature; no WASM thread support
+<!-- @since v3.0.0 -->
+- `Cursor` (from `query()`) and `FactLog` (from `fact_log()`) are owned and `Send`: they borrow nothing from the handle and can move to another thread. An open `FactLog` pins the committed generation, so checkpoints wait until it is closed (`API-013`).
+<!-- @end -->
 - `PreparedQuery` holds `Arc` clones of `FactStorage`, `RuleRegistry`, and `FunctionRegistry` — each `execute()` call re-reads live store state (new facts visible) while the query plan is reused

@@ -12,6 +12,7 @@ understand where time is spent.
 
 ## Cost Model
 
+<!-- @until v3.0.0 -->
 | Operation | Cost | Notes |
 |---|---|---|
 | Insert / retract (any DB size) | O(1) | WAL append; independent of `.graph` size |
@@ -27,6 +28,24 @@ understand where time is spent.
 | `(sum :with ?x)` cross-product join | O(N²) | No hash-join; avoid on large datasets |
 | Open (file-backed) | O(facts) | Page-cache warming; B+tree roots loaded lazily |
 | Checkpoint | O(facts) | WAL flush + B+tree rebuild across all 4 indexes |
+<!-- @end -->
+<!-- @since v3.0.0 -->
+| Operation | Cost | Notes |
+|---|---|---|
+| Insert / retract (any DB size) | O(1) | WAL append; independent of `.graph` size |
+| Query — bound entity or attribute | O(k) | Selective index fetch; k = facts for that entity/attr |
+| Query — no bound entity/attr | O(facts) | Full scan + in-memory filter |
+| Expression predicate `[(> ?x N)]` | O(N), early | Pushed down at first bound variable |
+| `not` / `not-join` | O(N²) worst case | Inner loop re-scans per binding |
+| `or` / `or-join` (mid-query) | O(N²) worst case | Branch expansion over full binding set |
+| `or` in a rule body | O(N) | Rule starts from empty binding — no re-scan |
+| Recursive rules | Super-linear | Semi-naive; deep chains are expensive |
+| Window functions | O(N log N) | Sort pass over result set |
+| Aggregates (`count`, `sum`, `min`, `max`) | O(N) | Single pass |
+| `(sum :with ?x)` cross-product join | O(N²) | No hash-join; avoid on large datasets |
+| Open (file-backed) | O(WAL) | Reads the newest valid meta page and replays the WAL; never rebuilds an index |
+| Checkpoint | O(change) | Copy-on-write: rewrites only the touched leaves and their paths, about 3 ms after one new fact at 10k–100k facts |
+<!-- @end -->
 
 **Selective fetch threshold:** the engine counts distinct bound entities + bound attributes across all
 patterns in the query. If the count is 1–4, it uses index-backed fetches instead of a full scan;

@@ -6,6 +6,7 @@ order: 50
 ---
 ## Feature matrix
 
+<!-- @until v3.0.0 -->
 | Feature | Minigraf | XTDB | Cozo | Neo4j | SQLite |
 |---|---|---|---|---|---|
 | **Query Language** | Datalog | Datalog | Datalog | Cypher | SQL |
@@ -22,6 +23,25 @@ order: 50
 | **Maturity** | Young (v1.0 in 2026). Known data-integrity issues on v2.x, fixed in v3.0.0 | Mature | Pre-1.0 | Mature | Decades of production use |
 
 Minigraf's bindings are split into [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers). Before adopting v2.x, read the [known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+| Feature | Minigraf | XTDB | Cozo | Neo4j | SQLite |
+|---|---|---|---|---|---|
+| **Query Language** | Datalog | Datalog | Datalog | Cypher | SQL |
+| **Single File** | ✅ Yes | ❌ No | ❌ No | ❌ No | ✅ Yes |
+| **Bi-temporal** | ✅ Yes | ✅ Yes | ⚠️ Time travel | ❌ No | ❌ No |
+| **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
+| **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
+| **Window Functions** | ✅ Yes | ✅ Yes | ✅ Yes | ⚠️ Limited | ✅ Yes |
+| **User-Defined Functions** | ✅ UDF aggregates + predicates (v0.17.0) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Prepared Statements** | ✅ `$slot` temporal bind tokens (v0.18.0) | ⚠️ Limited | ❌ No | ✅ Yes | ✅ Yes |
+| **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
+| **WASM Ready** | ✅ Yes (browser, WASI) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
+| **Platform support** | Tier 1: Rust, Python. Tier 2 (experimental): WASM, WASI, Android, iOS, Node.js, Java, C | JVM only | Native, WASM (limited) | JVM only | Native, WASM |
+| **Maturity** | Young (v1.0 in 2026); v3.0.0 brings file format v8 and data-integrity fixes | Mature | Pre-1.0 | Mature | Decades of production use |
+
+Minigraf's bindings are split into [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
+<!-- @end -->
 
 ---
 

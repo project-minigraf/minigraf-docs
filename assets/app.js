@@ -131,15 +131,22 @@ async function switchVersion(db, tag, { push = true } = {}) {
   const frags = await fragsAt(db, slug, tag);
   const htmls = await Promise.all(frags.map((f) => fetchBlob(f.blob)));
   const container = document.getElementById("frags");
+  // A page can hold the same blob twice (identical fragments), so keep a queue per blob.
   const existing = new Map();
-  for (const el of container.querySelectorAll(":scope > .frag")) existing.set(el.dataset.blob, el);
+  for (const el of container.querySelectorAll(":scope > .frag")) {
+    if (!existing.has(el.dataset.blob)) existing.set(el.dataset.blob, []);
+    existing.get(el.dataset.blob).push(el);
+  }
+  const before = container.querySelectorAll(":scope > .frag").length;
   const keep = anchorFragment();
 
   let changed = 0;
   const next = frags.map((f, i) => {
-    const el = existing.get(f.blob);
+    const queue = existing.get(f.blob);
+    const el = queue?.[0];
     if (el && (el.querySelector(":scope > .badge-added")?.textContent ?? null) ===
         (f.added ? `Added in ${f.added}` : null)) {
+      queue.shift();
       el.classList.remove("frag-changed");
       el.dataset.order = f.order;
       return el;
@@ -149,7 +156,7 @@ async function switchVersion(db, tag, { push = true } = {}) {
     fresh.classList.add("frag-changed");
     return fresh;
   });
-  const removed = [...existing.keys()].filter((b) => !frags.some((f) => f.blob === b)).length;
+  const removed = before - (next.length - changed);
   container.replaceChildren(...next);
 
   // Keep the reader's place: put the same fragment back at the same height.

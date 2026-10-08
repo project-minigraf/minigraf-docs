@@ -169,6 +169,9 @@ in [Audit and Time-Travel Idioms](cookbook-time-travel).
 - Minigraf places no uniqueness constraint on attribute values across valid-time ranges — overlapping periods are fully supported
 - To enforce "at most one active value at a time", validate at the application layer before transacting
 - Use `:valid-at :any-valid-time` to see all periods including non-overlapping historical ones
+<!-- @since v3.0.0 -->
+- The two periods here are different values, so they are different facts. One fact (the same entity, attribute *and* value) has only one current window: asserting `[:alice :role :project-lead]` again with another window replaces the first. To record the same value over two separate periods, give each period its own entity (for example an `:assignment` entity with `:assignment/role` and its own window), or read the earlier period with `:as-of`.
+<!-- @end -->
 
 **Visualize:** [Open this recipe in the time travel visualizer →](https://project-minigraf.github.io/minigraf-visualizer/#data=KHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyNC0wMS0wMSIgOnZhbGlkLXRvICIyMDI0LTA2LTMwIn0KICAgICAgICAgIFtbOmFsaWNlIDpyb2xlIDpwcm9qZWN0LWxlYWRdXSkKKHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyNC0wMy0wMSJ9CiAgICAgICAgICBbWzphbGljZSA6cm9sZSA6dGVjaG5pY2FsLWFkdmlzb3JdXSk&title=Overlapping+valid+periods&vt=2024-04-15&e=:alice&view=map)
 
@@ -178,6 +181,7 @@ in [Audit and Time-Travel Idioms](cookbook-time-travel).
 
 **Problem:** Record the real-world end of a situation that was modeled as open-ended.
 
+<!-- @until v3.0.0 -->
 ```datalog
 ;; Alice left StartupCo on 2025-12-31
 ;; Step 1: retract the open-ended fact
@@ -195,6 +199,24 @@ in [Audit and Time-Travel Idioms](cookbook-time-travel).
 - Follow immediately with a new open-ended fact if Alice starts a new role: `(transact {:valid-from "2026-01-15"} [[:alice :works-at :nextcorp]])`
 
 **Visualize:** [Open this recipe in the time travel visualizer →](https://project-minigraf.github.io/minigraf-visualizer/#data=KHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyMy0wNi0wMSJ9CiAgICAgICAgICBbWzphbGljZSA6d29ya3MtYXQgOnN0YXJ0dXBjb11dKQoocmV0cmFjdCBbWzphbGljZSA6d29ya3MtYXQgOnN0YXJ0dXBjb11dKQoodHJhbnNhY3Qgezp2YWxpZC1mcm9tICIyMDIzLTA2LTAxIiA6dmFsaWQtdG8gIjIwMjUtMTItMzEifQogICAgICAgICAgW1s6YWxpY2UgOndvcmtzLWF0IDpzdGFydHVwY29dXSk&title=Closing+an+open-ended+fact&tx=3&e=:alice&view=map)
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```datalog
+;; Alice joined StartupCo on 2023-06-01 (open-ended)
+(transact {:valid-from "2023-06-01"}
+          [[:alice :works-at :startupco]])
+
+;; She left on 2025-12-31: assert the same fact with the closed window
+(transact {:valid-from "2023-06-01" :valid-to "2025-12-31"}
+          [[:alice :works-at :startupco]])
+```
+
+**Notes:**
+- The later assertion replaces the fact's window, so after it the fact is valid only from 2023-06-01 to 2025-12-31. The open-ended window stays visible through `:as-of` the first transaction.
+- No `retract` is needed. `retract` means "this fact is no longer asserted at all"; closing a window is a `transact` with the new bounds. Extending or reopening a window works the same way.
+- The closing assertion carries the **original `valid-from`** so the full employment period is modeled.
+- Follow with a new open-ended fact if Alice starts a new role: `(transact {:valid-from "2026-01-15"} [[:alice :works-at :nextcorp]])`
+<!-- @end -->
 
 ---
 
@@ -202,6 +224,7 @@ in [Audit and Time-Travel Idioms](cookbook-time-travel).
 
 **Problem:** Know when to use error correction (Recipe 4) vs. valid-time bounding (Recipe 7).
 
+<!-- @until v3.0.0 -->
 ```datalog
 ;; ERROR CORRECTION — the original value was WRONG
 ;; Preserve the original valid-from in the replacement
@@ -225,6 +248,28 @@ in [Audit and Time-Travel Idioms](cookbook-time-travel).
 - Both preserve the full history of what was recorded and when; `:as-of` lets you see the database state before either change
 
 **Visualize:** [Open this recipe in the time travel visualizer →](https://project-minigraf.github.io/minigraf-visualizer/#data=KHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyNC0wMS0wMSJ9IFtbOmFsaWNlIDpzYWxhcnkgNzUwMDBdXSkKKHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyMy0wNi0wMSJ9IFtbOmFsaWNlIDp3b3Jrcy1hdCA6c3RhcnR1cGNvXV0pCihyZXRyYWN0IFtbOmFsaWNlIDpzYWxhcnkgNzUwMDBdXSkKKHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyNC0wMS0wMSJ9ICA7OyBzYW1lIHN0YXJ0IGRhdGUgYXMgdGhlIHdyb25nIGZhY3QKICAgICAgICAgIFtbOmFsaWNlIDpzYWxhcnkgODAwMDBdXSkKKHJldHJhY3QgW1s6YWxpY2UgOndvcmtzLWF0IDpzdGFydHVwY29dXSkKKHRyYW5zYWN0IHs6dmFsaWQtZnJvbSAiMjAyMy0wNi0wMSIgOnZhbGlkLXRvICIyMDI1LTEyLTMxIn0KICAgICAgICAgIFtbOmFsaWNlIDp3b3Jrcy1hdCA6c3RhcnR1cGNvXV0pCih0cmFuc2FjdCB7OnZhbGlkLWZyb20gIjIwMjYtMDEtMTUifQogICAgICAgICAgW1s6YWxpY2UgOndvcmtzLWF0IDpuZXh0Y29ycF1dKQ&title=Correction+vs.+lifecycle+end&vt=any&e=:alice&view=map)
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```datalog
+;; ERROR CORRECTION — the original value was WRONG
+;; Withdraw it, and assert the right value with the original valid-from
+(retract [[:alice :salary 75000]])
+(transact {:valid-from "2024-01-01"}  ;; same start date as the wrong fact
+          [[:alice :salary 80000]])
+
+;; LIFECYCLE END — the original value was CORRECT but the situation changed
+;; Close the fact's window at the real-world end date; add a new fact for the next period
+(transact {:valid-from "2023-06-01" :valid-to "2025-12-31"}
+          [[:alice :works-at :startupco]])
+(transact {:valid-from "2026-01-15"}
+          [[:alice :works-at :nextcorp]])
+```
+
+**Notes:**
+- **Error correction** retracts: the wrong value was never true, so it is withdrawn, and the right value is asserted with the original `valid-from`.
+- **Lifecycle end** does not retract: the value was true, so the same fact is asserted again with its closed window, and a new fact covers the new period.
+- Both preserve the full history of what was recorded and when; `:as-of` lets you see the database state before either change
+<!-- @end -->
 
 ---
 

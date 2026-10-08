@@ -166,11 +166,20 @@ Minigraf ships native bindings for both mobile platforms via [UniFFI](https://gi
 
 The AAR is published to Maven Central. In your module `build.gradle.kts`:
 
+<!-- @until v3.0.0 -->
 ```kotlin
 dependencies {
     implementation("io.github.project-minigraf:minigraf-android:2.0.4")
 }
 ```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```kotlin
+dependencies {
+    implementation("io.github.project-minigraf:minigraf-android:3.0.0")
+}
+```
+<!-- @end -->
 
 See [minigraf-android](https://github.com/project-minigraf/minigraf-android) for the current version.
 
@@ -260,6 +269,7 @@ val rows = withContext(Dispatchers.IO) {
 
 The Swift package lives in [minigraf-swift](https://github.com/project-minigraf/minigraf-swift).
 
+<!-- @until v3.0.0 -->
 In Xcode: **File → Add Package Dependencies**, enter `https://github.com/project-minigraf/minigraf-swift` and select **Up to Next Major Version** from `2.0.4`.
 
 Or add it directly to your `Package.swift`:
@@ -280,6 +290,27 @@ targets: [
 ```
 
 Use 2.0.1 or later. Earlier semver tags in minigraf-swift point at a manifest with a placeholder checksum and do not resolve; see the [minigraf-swift README](https://github.com/project-minigraf/minigraf-swift).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+In Xcode: **File → Add Package Dependencies**, enter `https://github.com/project-minigraf/minigraf-swift` and select **Up to Next Major Version** from `3.0.0`.
+
+Or add it directly to your `Package.swift`:
+
+```swift
+// Package.swift
+dependencies: [
+    .package(url: "https://github.com/project-minigraf/minigraf-swift", from: "3.0.0"),
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [
+            .product(name: "MinigrafKit", package: "minigraf-swift"),
+        ]
+    ),
+],
+```
+<!-- @end -->
 
 ##### 2 — Use in Swift
 
@@ -443,6 +474,26 @@ const query = JSON.parse(await db.execute(
 | `query` | `{"variables": [...], "results": [[...]]}` |
 | `rule` | `{"ok": true}` |
 
+<!-- @since v3.0.0 -->
+#### Reading large results in batches
+
+`query()` opens a `BrowserCursor` and returns it synchronously, for results you want to read a batch at a time. The answer is fixed when the cursor opens.
+
+```javascript
+const cursor = db.query('(query [:find ?name :where [?e :person/name ?name]])');
+try {
+  let batch;
+  while ((batch = cursor.nextBatch(1000)) !== undefined) {
+    for (const row of JSON.parse(batch)) console.log(row);
+  }
+} finally {
+  cursor.close();
+}
+```
+
+`cursor.vars()` returns the `:find` variables. Only queries are accepted: `transact`, `retract` and `rule` throw `API-012`, and a query with `$slot` bind slots throws `API-010`.
+
+<!-- @end -->
 #### Checkpoint and portability
 
 `execute()` flushes dirty pages automatically. Call `checkpoint()` explicitly only after `importGraph()` or large bulk operations:
@@ -628,12 +679,22 @@ See the [minigraf-node README](https://github.com/project-minigraf/minigraf-node
 
 Minigraf for Java and Kotlin ships as `io.github.project-minigraf:minigraf-jvm` on Maven Central — a fat JAR with embedded native libraries. No Rust toolchain required.
 
+<!-- @until v3.0.0 -->
 ```kotlin
 // build.gradle.kts
 dependencies {
     implementation("io.github.project-minigraf:minigraf-jvm:2.0.4")
 }
 ```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("io.github.project-minigraf:minigraf-jvm:3.0.0")
+}
+```
+<!-- @end -->
 
 ```kotlin
 import uniffi.minigraf_ffi.MiniGrafDb
@@ -655,10 +716,18 @@ Minigraf for C ships as platform tarballs on the minigraf-c GitHub Releases — 
 
 Download from [minigraf-c releases](https://github.com/project-minigraf/minigraf-c/releases). Assets are named `minigraf-c-<version>-<platform>` for `linux-x86_64`, `linux-aarch64`, `macos-universal2` (`.tar.gz`) and `windows-x86_64` (`.zip`):
 
+<!-- @until v3.0.0 -->
 ```sh
 # Linux x86_64
 curl -L https://github.com/project-minigraf/minigraf-c/releases/download/v2.0.4/minigraf-c-v2.0.4-linux-x86_64.tar.gz | tar xz
 ```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```sh
+# Linux x86_64
+curl -L https://github.com/project-minigraf/minigraf-c/releases/download/v3.0.0/minigraf-c-v3.0.0-linux-x86_64.tar.gz | tar xz
+```
+<!-- @end -->
 
 ```c
 #include "minigraf.h"
