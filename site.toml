@@ -1,0 +1,56 @@
+# Versions, snapshot pages and site settings. See DESIGN.md.
+
+[site]
+title = "Minigraf"
+url = "https://project-minigraf.github.io/minigraf-docs/"
+repo_url = "https://github.com/project-minigraf/minigraf"
+sections = ["Start", "Tutorial", "Cookbook", "Reference", "Release notes"]
+home = "home"
+
+# One entry per release. Pages are valid from v2.0.0 unless they say otherwise.
+
+[[version]]
+tag = "v2.0.0"
+date = "2026-08-26"
+
+[[version]]
+tag = "v2.0.1"
+date = "2026-09-25"
+
+[[version]]
+tag = "v2.0.2"
+date = "2026-09-27"
+
+[[version]]
+tag = "v2.0.3"
+date = "2026-10-06"
+
+[[version]]
+tag = "v2.0.4"
+date = "2026-10-08"
+
+[[version]]
+tag = "v3.0.0"
+released = false
+git_ref = "origin/v3"
+
+# Pages read from the Minigraf repository at each version's git ref.
+
+[[snapshot]]
+slug = "changelog"
+title = "Changelog"
+section = "Release notes"
+order = 10
+path = "CHANGELOG.md"
+split = 2
+scoped_ids = true
+since = "v2.0.0"
+
+[[snapshot]]
+slug = "error-reference"
+title = "Error Reference"
+section = "Reference"
+order = 60
+path = "docs/ERROR_REFERENCE.md"
+split = 3
+since = "v2.0.0"

@@ -1,0 +1,13 @@
+[package]
+name = "minigraf-docs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+flate2 = "1.1.10"
+minigraf = "=2.0.4"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.11.0"
+toml = "1.1.7"
