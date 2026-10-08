@@ -212,9 +212,18 @@ Window UDFs follow the same `:over` syntax as built-in window functions — see 
 
 UDF names in `:find` aggregates, `:over` window clauses, and `[(name? ?var)]` filter expressions are **not validated at parse time**. The parser records the name as an opaque identifier and defers the lookup to execution. If the name is not registered when the query runs, the executor returns an error:
 
+<!-- @until v3.0.0 -->
 ```
 Error: [INT-029] unknown aggregate function: 'delivery-score'
 ```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```
+Error: [QRY-010] unknown aggregate function: 'delivery-score'
+```
+
+Aggregate and window function names are looked up when the query starts, so the error comes even when no row matches.
+<!-- @end -->
 
 This means you can parse and store a query string before calling `register_predicate` or `register_aggregate`. The query will execute successfully once the UDF is registered.
 
