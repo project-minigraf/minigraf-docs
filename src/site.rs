@@ -430,6 +430,7 @@ query it here. Changes you make are lost when you leave the page.</p>
 
 pub fn not_found(site: &Site) -> String {
     let base = site.base_path();
+    let base_js = format!("{base:?}");
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -461,6 +462,5 @@ pub fn not_found(site: &Site) -> String {
 </html>
 "#,
         title = escape(&site.title),
-        base_js = format!("{base:?}"),
     )
 }
