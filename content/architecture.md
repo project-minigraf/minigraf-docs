@@ -295,6 +295,7 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 **Migration.**
 - v7 files (v2.x) upgrade automatically, one way, on first open.
 - The upgrade is crash-safe, with a backup meta page. Old pages become free pages that later checkpoints reuse.
+- A v7 fact page whose type byte is damaged fails the upgrade with `STG-014`, and the file is left as v7. v7 fact pages have no checksum, so other damage inside a page is not always caught: keep a copy of a v7 file until it has opened under v3.
 - v1–v6 fail with `STG-028`: open them once with v2.x first.
 - Development builds of v3.0.0 from before this format fail with `STG-032`.
 
