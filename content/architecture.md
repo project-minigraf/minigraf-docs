@@ -343,6 +343,8 @@ CRC32-protected entries ensure partial writes (from crashes) are safely discarde
 
 <!-- @since v3.0.0 -->
 Opening a database for writing cuts the WAL back to the end of its last valid entry, and syncs it, before anything is appended, so a new entry always lands where replay reaches it. After a failed WAL write or sync, later writes through that handle fail with `WAL-007` until the database is reopened or a `checkpoint()` succeeds. The transaction whose write failed is not applied; after a reopen it is there in full or not at all.
+
+A checkpoint that fails after it may have written (a failed write, a full disk, a failed `fsync`) is never retried on the same handle: after a failed `fsync` the kernel may have dropped the written pages, and the checkpoint's meta page may have reached the disk anyway. Every later write, checkpoint and index rebuild through the handle fails with `STG-046`, queries keep working, and the close-time checkpoint is skipped. Reopening recovers every committed transaction from the WAL.
 <!-- @end -->
 
 ---
