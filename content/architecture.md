@@ -334,7 +334,11 @@ WAL file layout:
 On open, the WAL is replayed only on top of the generation it was written against. A version 1 WAL from v2.x next to a file migrated from v7 is still replayed.
 <!-- @end -->
 
-CRC32-protected entries ensure partial writes (from crashes) are safely discarded. Every WAL write is followed by a flush to disk, controlled by `OpenOptions::synchronous` (see [Performance Tuning](performance-tuning#configuration-knobs)):
+CRC32-protected entries ensure partial writes (from crashes) are safely discarded.
+
+<!-- @since v3.0.0 -->
+Opening a database for writing cuts the WAL back to the end of its last valid entry, and syncs it, before anything is appended, so a new entry always lands where replay reaches it. After a failed WAL write or sync, later writes through that handle fail with `WAL-007` until the database is reopened or a `checkpoint()` succeeds. The transaction whose write failed is not applied; after a reopen it is there in full or not at all.
+<!-- @end --> Every WAL write is followed by a flush to disk, controlled by `OpenOptions::synchronous` (see [Performance Tuning](performance-tuning#configuration-knobs)):
 
 - **`SyncMode::Full`** (default) — `fdatasync` after every entry. Matches Minigraf's original always-fsync behavior; every committed `transact`/`retract` is durable immediately.
 - **`SyncMode::Normal`** — no per-write flush. Entries are still `write_all()`'d (safe across an ordinary process crash) but not forced to disk until the next checkpoint (auto-threshold, explicit `checkpoint()`, or clean close). Data written since the last checkpoint is lost only on OS crash or power loss, not process death. Intended for bulk loaders that can safely re-run from a checkpoint watermark.
