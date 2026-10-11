@@ -177,6 +177,8 @@ test("pages fit a phone screen", async () => {
   for (const path of ["latest/datalog-reference/", "diff/?from=v2.0.4&to=v3.0.0", "console/"]) {
     const { page, context } = await openPage(path, { viewport: { width: 375, height: 760 } });
     await page.waitForLoadState("networkidle");
+    // The diff renders after the docs graph loads; measure the rendered page.
+    if (path.startsWith("diff/")) await page.locator(".diff-index").waitFor({ timeout: 20000 });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     assert.ok(overflow <= 0, `${path} scrolls sideways by ${overflow}px`);
     await context.close();
