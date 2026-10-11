@@ -108,7 +108,7 @@ Each build writes the graph from scratch. Keeping transaction-time history acros
 
 ```
 index.html                 → redirects to latest/
-<tag>/<slug>/index.html    one page per version (v2.0.0 … v2.0.4, v3.0.0)
+<tag>/<slug>/index.html    one page per version (v2.0.0 … v2.0.5, v3.0.0)
 latest/<slug>/index.html   copy of the newest released version, canonical link to it
 diff/index.html            "what changed" view (client-side)
 console/index.html         Datalog console (client-side)
