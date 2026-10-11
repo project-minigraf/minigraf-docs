@@ -5,7 +5,7 @@ section: Reference
 order: 25
 since: v3.0.0
 ---
-Rust APIs for tools that work on a whole database: backups, inspectors, integrity checks and offline migrations. The language bindings expose the same shape; see each binding's documentation for its names.
+Rust APIs for tools that work on a whole database: backups, inspectors, integrity checks and offline migrations. The language bindings expose the same shape; see each binding's documentation for its names. For when to use them (backup and restore procedures, crash recovery, and what each storage error asks you to do), see [Durability and Recovery](durability).
 
 ## Read-only open
 

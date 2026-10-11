@@ -11,7 +11,7 @@ v2.x keeps getting data-integrity and security fixes for 12 months after v3.0.0 
 
 ## Your files
 
-- **A v7 file (written by v2.x) is upgraded to v8 the first time v3 opens it.** The upgrade re-indexes the file, is crash-safe, and is one way: v2.x cannot open a v8 file (`STG-006`). Keep a copy if you may need to go back. A file opened with `OpenOptions::read_only(true)` is read into memory instead and is not upgraded.
+- **A v7 file (written by v2.x) is upgraded to v8 the first time v3 opens it.** The upgrade re-indexes the file, is crash-safe, and is one way: v2.x cannot open a v8 file (`STG-006`). Keep a copy if you may need to go back; [Durability and Recovery](durability#upgrading) lists the steps. A file opened with `OpenOptions::read_only(true)` is read into memory instead and is not upgraded.
 - **Formats v1–v6 are no longer readable** (`STG-028`). Open such a file once with v2.x to upgrade it to v7, then open it with v3.
 - Files written by v3.0.0 development builds from before the final format fail with `STG-032`.
 - In the browser, `BrowserDb.open()` writes the upgraded pages back to IndexedDB, so a stored v7 database is upgraded once rather than on every open.

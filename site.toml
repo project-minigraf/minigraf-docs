@@ -47,6 +47,14 @@ scoped_ids = true
 since = "v2.0.0"
 
 [[snapshot]]
+slug = "durability"
+title = "Durability and Recovery"
+section = "Reference"
+order = 27
+path = "docs/DURABILITY.md"
+since = "v3.0.0"
+
+[[snapshot]]
 slug = "error-reference"
 title = "Error Reference"
 section = "Reference"
