@@ -405,8 +405,17 @@ value for that limit. Values must be positive integers (≥ 1).
 - `:max-derived-facts N` — caps how many facts the recursive rule engine can derive
   internally before returning an error. Use when a legitimate recursive query exceeds
   the database default.
-- `:max-results N` — caps the maximum number of result rows returned. Applies inside
-  the rule evaluator; for non-recursive queries results are not truncated by this value.
+<!-- @until v3.0.0 -->
+- `:max-results N` — caps the facts the rule evaluator holds, **counting the database's
+  own live facts**, so on a database with `N` or more live facts every rule query fails
+  with `INT-020` (#528). Raise it above the live facts plus the derived ones. Queries
+  without rules are not limited by this value.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+- `:max-results N` — caps how many facts the rules of a query may derive in total;
+  the database's own facts do not count. Queries without rules are not limited by
+  this value, and results are never truncated: the query fails with `INT-020`.
+<!-- @end -->
 
 The limits are applied for that query only and do not affect subsequent queries.
 

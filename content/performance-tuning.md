@@ -91,6 +91,13 @@ fast on runaway recursive rules or unexpectedly large result sets; raise only if
 hits the ceiling. For one-off queries that need a different limit without reconfiguring the database,
 use `:max-derived-facts N` or `:max-results N` directly in the query vector — see the
 [Datalog Reference](datalog-reference#max-derived-facts-and-max-results--per-query-complexity-limits).
+<!-- @until v3.0.0 -->
+Before v3.0.0, `max_results` also counts the database's own live facts, so with 1,000,000 or more
+live facts every rule query fails with `INT-020` until the limit is raised (#528).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+`max_results` counts only the facts the rules derive, not the database's own facts.
+<!-- @end -->
 
 **`synchronous`** — Controls WAL write durability, independent of `checkpoint()` (which always
 fsyncs the main file regardless of this setting). `SyncMode::Full` (default) fsyncs after every
