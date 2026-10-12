@@ -114,6 +114,8 @@ diff/index.html            "what changed" view (client-side)
 console/index.html         Datalog console (client-side)
 blobs/<hash>.html          fragment HTML
 docs.graph                 the index
+docs.graph.gz              the same, gzipped (GitHub Pages does not compress .graph)
+search-<id>.graph(.gz)     the search index, named by build id
 assets/                    CSS, JS, vendored @minigraf/browser
 404.html
 ```
@@ -136,6 +138,34 @@ changed fragment always has a new URL.
 - **Diff view:** for two versions, list pages added, removed and changed; within a changed page,
   show removed and added fragments with unchanged runs collapsed. The Datalog used is shown.
 - **Console:** run Datalog against `docs.graph`, with a version picker that fills in `:valid-at`.
+- **Search:** see below.
+
+## Search
+
+Design: [docs/specs/2026-10-12-search-design.md](docs/specs/2026-10-12-search-design.md).
+
+- **Index.** `search-<id>.graph` is a second Minigraf file. Each entity is a term chunk:
+  `:term/text` and `:term/blobs`, a string `"<blob>:<weight> …"` of at most 3,000 bytes (format
+  v7 limits a fact to 4,080). Weight is 1 per occurrence plus 10 per occurrence in a heading.
+  Blob entities hold `:blob/hash` and `:blob/anchor` (the id of the heading the blob starts with).
+  The index is version-free; results are scoped by joining with `docs.graph` at `:valid-at`.
+  One entity per term chunk was chosen over one per (term, blob): 8 MB and 23–51 ms against
+  47 MB and 320+ ms (benchmark in the spec).
+- **Text and tokens.** `render()` collects each fragment's text and heading text from the
+  Markdown events (raw HTML skipped). `src/tokenize.rs` and `assets/tokenize.js` are the same
+  tokenizer: ASCII lower-case, words of alphanumerics and `-`, parts of two or more characters
+  that are not stopwords, plus the hyphenated whole. Both are tested against
+  `tests/tokenize.json`, and a Rust test checks the two stopword lists are equal.
+- **Pairing.** The build id is a hash of the index content. It names the search file and is
+  stored in both graphs (`:build/id`). The browser reads it from the `docs.graph` it loaded and
+  fetches that exact file, so it never pairs files from two builds; a deploy in between gives a
+  404 and a "reload the page" message. The build fails unless both graphs hold the id and the
+  search index's blobs equal `docs.graph`'s `:frag/blob` values.
+- **Browser.** `assets/search.js` loads the search file on first focus of the field (or `/`),
+  into a second in-memory database. Every query token is an exact term lookup except the last,
+  matched with `starts-with?` while it is being typed; results must contain every token and are
+  ordered by summed weight, then page order. The field is a WAI-ARIA combobox; it is hidden
+  without JavaScript.
 
 ## Wiki retirement
 

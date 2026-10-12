@@ -15,6 +15,11 @@ workflow runs). Tasks that touch `assets/` or `e2e/` also run the site build and
    directly. The Rust stopword-parity test reads `assets/tokenize.js`.
 2. **Search field without JavaScript.** The spec has no fallback. The field is rendered with the
    `hidden` attribute and `search.js` shows it, so a page without JavaScript has no dead control.
+3. **Implied parts dropped from queries** (found while implementing). A query's hyphenated token
+   implies its parts, so `parseQuery` leaves the parts out. Otherwise a blob listing many codes
+   (the error-code table mentions `prs` about 80 times) outscores the section about `PRS-015`.
+4. **Snippets** centre on the longest token that occurs, and add a space after table cells,
+   list items and blocks before taking the text, so neighbouring cells do not run together.
 
 ## Task 1: remove the benchmark
 

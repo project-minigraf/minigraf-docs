@@ -7,7 +7,8 @@ The site is indexed by Minigraf itself. Each release is a point on Minigraf's va
 and each section of each page is a fact with a valid-time window. A page at a version is a
 `:valid-at` query. Pages are rendered at build time, so they work without JavaScript. In the
 browser, `@minigraf/browser` loads the same index into memory to switch versions in place, show
-what changed between two versions, and run Datalog in a console. [DESIGN.md](DESIGN.md) explains
+what changed between two versions, search the docs of the version being read, and run Datalog
+in a console. [DESIGN.md](DESIGN.md) explains
 how it works.
 
 ## Editing pages
