@@ -144,6 +144,7 @@ fn topbar(ctx: &PageCtx, slug: Option<&str>) -> String {
 <button class="menu-toggle" type="button" aria-label="Show pages" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
 <a class="brand" href="{root}{dir}/"><img src="{root}assets/favicon.svg" alt="" width="22" height="22"><span>{title}</span></a>
 {picker}
+{search}
 <nav class="toplinks" aria-label="Tools">
 <a href="{root}diff/?from={from}&amp;to={tag}">What changed</a>
 <a href="{root}console/?version={tag}">Query console</a>
@@ -155,8 +156,24 @@ fn topbar(ctx: &PageCtx, slug: Option<&str>) -> String {
         title = escape(&ctx.site.title),
         dir = escape(ctx.dir),
         picker = version_picker(ctx, slug),
+        search = search_box(root, tag),
         from = escape(&diff_from.tag),
         repo = escape(&ctx.site.repo_url),
+    )
+}
+
+/// The search field: a WAI-ARIA combobox over a listbox of results. Hidden until
+/// `assets/search.js` runs, since search needs JavaScript.
+fn search_box(root: &str, tag: &str) -> String {
+    format!(
+        r#"<div class="search" hidden>
+<button class="search-toggle" type="button" aria-label="Search" aria-expanded="false" aria-controls="search-input"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+<input id="search-input" class="search-input" type="search" placeholder="Search" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-label="Search the docs for {tag}">
+<ul id="search-results" class="search-results" role="listbox" aria-label="Search results" hidden></ul>
+<div id="search-status" class="sr-only" role="status"></div>
+</div>
+<script type="module" src="{root}assets/search.js"></script>"#,
+        tag = escape(tag),
     )
 }
 
@@ -463,4 +480,26 @@ pub fn not_found(site: &Site) -> String {
 "#,
         title = escape(&site.title),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_box_is_an_aria_combobox() {
+        let html = search_box("../../", "v3.0.0");
+        for attr in [
+            r#"<div class="search" hidden>"#,
+            r#"role="combobox""#,
+            r#"aria-expanded="false" aria-controls="search-results""#,
+            r#"aria-autocomplete="list""#,
+            r#"aria-label="Search the docs for v3.0.0""#,
+            r#"<ul id="search-results" class="search-results" role="listbox""#,
+            r#"role="status""#,
+            r#"<script type="module" src="../../assets/search.js"></script>"#,
+        ] {
+            assert!(html.contains(attr), "missing {attr}");
+        }
+    }
 }

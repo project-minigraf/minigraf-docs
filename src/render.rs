@@ -19,6 +19,11 @@ pub struct Rendered {
     /// Text of the fragment's first heading, if it starts with one.
     pub heading: Option<String>,
     pub ids: Vec<String>,
+    /// Visible text for the search index: text, inline code and code blocks, each followed by a
+    /// space. Raw HTML is left out.
+    pub text: String,
+    /// The text of the fragment's headings (also part of `text`).
+    pub heading_text: String,
     pub links: BTreeSet<Link>,
 }
 
@@ -94,22 +99,28 @@ pub fn render(
     let mut links = BTreeSet::new();
     let mut new_ids = Vec::new();
     let mut first_heading = None;
+    let mut text = String::new();
+    let mut heading_text = String::new();
     let mut i = 0;
     while i < events.len() {
         match &events[i] {
             Event::Start(Tag::Heading { level, .. }) => {
                 let level = *level as u8;
                 let mut j = i + 1;
-                let mut text = String::new();
+                let mut title = String::new();
                 while !matches!(events[j], Event::End(TagEnd::Heading(_))) {
                     if let Event::Text(t) | Event::Code(t) = &events[j] {
-                        text.push_str(t);
+                        title.push_str(t);
+                        for out in [&mut text, &mut heading_text] {
+                            out.push_str(t);
+                            out.push(' ');
+                        }
                     }
                     j += 1;
                 }
-                let id = ids.alloc(level, &text, scoped_ids, window);
+                let id = ids.alloc(level, &title, scoped_ids, window);
                 if i == 0 {
-                    first_heading = Some(text.clone());
+                    first_heading = Some(title.clone());
                 }
                 out.push(Event::Html(CowStr::from(format!("<h{level} id=\"{id}\">"))));
                 for e in &events[i + 1..j] {
@@ -136,6 +147,8 @@ pub fn render(
                     }
                     j += 1;
                 }
+                text.push_str(&code);
+                text.push(' ');
                 let body = match lang.as_str() {
                     "datalog" | "clojure" | "edn" => highlight_datalog(&code),
                     _ => escape(&code),
@@ -151,6 +164,10 @@ pub fn render(
                 i = j + 1;
             }
             e => {
+                if let Event::Text(t) | Event::Code(t) = e {
+                    text.push_str(t);
+                    text.push(' ');
+                }
                 out.push(rewrite_link(e.clone(), slugs, mode, &mut links)?);
                 i += 1;
             }
@@ -162,6 +179,8 @@ pub fn render(
         html,
         heading: first_heading,
         ids: new_ids,
+        text,
+        heading_text,
         links,
     })
 }
@@ -399,6 +418,28 @@ mod tests {
             slugify("PRS-001 Unexpected end of input"),
             "prs-001-unexpected-end-of-input"
         );
+    }
+
+    #[test]
+    fn search_text() {
+        let r = render(
+            "## The `:as-of` clause\n\nSee [negation](datalog-reference#not) and \
+             <span class=\"x\">raw</span> `code`.\n\n```datalog\n(query [:find ?e])\n```\n",
+            &slugs(),
+            &mut IdAllocator::default(),
+            Window::ALL,
+            false,
+            &LinkMode::Authored,
+        )
+        .unwrap();
+        assert_eq!(r.heading_text, "The  :as-of  clause ");
+        assert!(r.text.starts_with("The  :as-of  clause "));
+        for part in ["See ", "negation", "raw", "code", "(query [:find ?e])"] {
+            assert!(r.text.contains(part), "missing {part}");
+        }
+        for html in ["span", "class", "datalog-reference", "<"] {
+            assert!(!r.text.contains(html), "raw HTML {html} in text");
+        }
     }
 
     #[test]

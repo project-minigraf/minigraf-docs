@@ -1,6 +1,9 @@
 # Site search (#8)
 
-Status: draft for review, 2026-10-12.
+Status: implemented (#8). The implementation deviates in four small ways, listed in
+[the plan](../plans/2026-10-12-search-plan.md#deviations-from-the-spec): the tokenizer is in
+`assets/tokenize.js`, the field is hidden until the script runs, a query's hyphenated token
+replaces its parts, and snippets centre on the longest token.
 
 ## Goal
 

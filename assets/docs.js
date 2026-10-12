@@ -55,10 +55,15 @@ export const versionsQuery =
 
 // ── The database ─────────────────────────────────────────────────────────────
 
-async function fetchGraph() {
+/**
+ * Fetches a graph file, preferring its gzipped copy (GitHub Pages does not compress unknown
+ * types). `cache` is passed to fetch: docs.graph is revalidated on every load, while the search
+ * graph is immutable under its build-id name.
+ */
+export async function fetchGraph(name, cache = "default") {
   if ("DecompressionStream" in window) {
     try {
-      const res = await fetch(new URL("docs.graph.gz", root), { cache: "no-cache" });
+      const res = await fetch(new URL(`${name}.gz`, root), { cache });
       if (res.ok) {
         const stream = res.body.pipeThrough(new DecompressionStream("gzip"));
         return new Uint8Array(await new Response(stream).arrayBuffer());
@@ -67,9 +72,16 @@ async function fetchGraph() {
       // Fall through to the uncompressed file.
     }
   }
-  const res = await fetch(new URL("docs.graph", root), { cache: "no-cache" });
-  if (!res.ok) throw new Error(`docs.graph: HTTP ${res.status}`);
+  const res = await fetch(new URL(name, root), { cache });
+  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
+}
+
+/** A new in-memory database holding `bytes`. Call after getDb() has resolved (WASM ready). */
+export async function openGraph(bytes) {
+  const db = BrowserDb.openInMemory();
+  await db.importGraph(bytes);
+  return db;
 }
 
 let dbPromise = null;
@@ -82,8 +94,7 @@ export function getDb() {
       await init({
         module_or_path: new URL("vendor/minigraf-browser/minigraf_wasm_bg.wasm", import.meta.url),
       });
-      const db = BrowserDb.openInMemory();
-      await db.importGraph(await fetchGraph());
+      const db = await openGraph(await fetchGraph("docs.graph", "no-cache"));
       dbReady = db;
       document.documentElement.dataset.index = "ready";
       return db;

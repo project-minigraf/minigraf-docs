@@ -4,6 +4,7 @@ use crate::config::Release;
 use crate::version::{Version, Window};
 use anyhow::{Context, Result, bail};
 use minigraf::{Minigraf, QueryResult, Value};
+use std::collections::BTreeSet;
 use std::path::Path;
 
 /// Valid-time floor for windows with no start: v0.0.0. Without an explicit `:valid-from`,
@@ -64,7 +65,7 @@ pub fn edn_str(s: &str) -> String {
     out
 }
 
-fn window_map(w: Window) -> String {
+pub fn window_map(w: Window) -> String {
     let from = w.from.unwrap_or(FLOOR).time();
     match w.to {
         Some(to) => format!("{{:valid-from \"{from}\" :valid-to \"{}\"}}", to.time()),
@@ -158,6 +159,32 @@ impl DocsGraph {
         }
         self.exec(&format!("(transact [{facts}])"))?;
         Ok(())
+    }
+
+    /// The search index's build id (see `search.rs`), valid in every version.
+    pub fn write_build_id(&self, id: &str) -> Result<()> {
+        self.exec(&format!(
+            "(transact [[:docs/build :build/id {} {}]])",
+            edn_str(id),
+            window_map(Window::ALL)
+        ))?;
+        Ok(())
+    }
+
+    pub fn build_id(&self) -> Result<String> {
+        let rows = self.rows("(query [:find ?id :any-valid-time :where [?b :build/id ?id]])")?;
+        match rows.as_slice() {
+            [row] => string(&row[0]),
+            _ => bail!("docs.graph holds {} build ids, expected one", rows.len()),
+        }
+    }
+
+    /// Every blob any version's fragments use.
+    pub fn all_frag_blobs(&self) -> Result<BTreeSet<String>> {
+        self.rows("(query [:find ?blob :any-valid-time :where [?f :frag/blob ?blob]])")?
+            .iter()
+            .map(|r| string(&r[0]))
+            .collect()
     }
 
     pub fn checkpoint(&self) -> Result<()> {
@@ -334,5 +361,11 @@ mod tests {
         let nav3 = g.nav_at(v("v3.0.0")).unwrap();
         assert_eq!(nav3.len(), 2);
         assert_eq!(nav3[0].title, "Arch \"quoted\"");
+
+        let all: Vec<String> = g.all_frag_blobs().unwrap().into_iter().collect();
+        assert_eq!(all, vec!["common", "fix", "n", "v7", "v8"]);
+        assert!(g.build_id().is_err());
+        g.write_build_id("0123456789abcdef").unwrap();
+        assert_eq!(g.build_id().unwrap(), "0123456789abcdef");
     }
 }

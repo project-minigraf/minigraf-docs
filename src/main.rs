@@ -11,15 +11,18 @@
 mod config;
 mod graph;
 mod render;
+mod search;
 mod site;
 mod snapshot;
 mod source;
+mod tokenize;
 mod version;
 
 use anyhow::{Context, Result, bail};
 use config::{Config, Release};
 use graph::{DocsGraph, FragFacts, NavEntry, PageFacts};
 use render::{IdAllocator, Link, LinkMode, Rendered, render};
+use search::SearchIndex;
 use sha2::{Digest, Sha256};
 use site::PageCtx;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -77,6 +80,17 @@ fn write(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
+/// Writes `<path>.gz` next to `path` and returns the size of `path`.
+fn gzip(path: &Path) -> Result<usize> {
+    let raw = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    std::io::Write::write_all(&mut gz, &raw)?;
+    let mut out = path.as_os_str().to_owned();
+    out.push(".gz");
+    write(Path::new(&out), gz.finish()?)?;
+    Ok(raw.len())
 }
 
 fn copy_dir(from: &Path, to: &Path) -> Result<()> {
@@ -224,13 +238,23 @@ fn build(args: &Args) -> Result<()> {
     }
     fs::create_dir_all(&args.out)?;
 
-    // The index.
+    // The index, and the search index paired with it by build id.
+    let search_index = SearchIndex::build(&sources.blobs);
+    let build_id = search_index.build_id();
     let graph = DocsGraph::create(&args.out.join("docs.graph"))?;
     graph.write_versions(&releases)?;
     for page in &sources.pages {
         graph.write_page(page, 0)?;
     }
+    graph.write_build_id(&build_id)?;
     graph.checkpoint()?;
+    let search_name = format!("search-{build_id}.graph");
+    let search_path = args.out.join(&search_name);
+    search_index.write(&search_path, &build_id)?;
+    if graph.build_id()? != build_id {
+        bail!("docs.graph does not hold build id {build_id}");
+    }
+    search::verify(&search_path, &build_id, &graph.all_frag_blobs()?)?;
 
     // Every page at every version, read back from the graph.
     let mut nav_by_tag: HashMap<String, Vec<NavEntry>> = HashMap::new();
@@ -345,20 +369,18 @@ fn build(args: &Args) -> Result<()> {
     write(&args.out.join("sitemap.xml"), xml)?;
     copy_dir(&args.root.join("assets"), &args.out.join("assets"))?;
 
-    // GitHub Pages does not compress an unknown file type; the browser inflates this copy
-    // with DecompressionStream and falls back to docs.graph.
-    let raw = fs::read(args.out.join("docs.graph"))?;
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
-    std::io::Write::write_all(&mut gz, &raw)?;
-    write(&args.out.join("docs.graph.gz"), gz.finish()?)?;
-    let graph_size = raw.len();
+    // GitHub Pages does not compress an unknown file type; the browser inflates these copies
+    // with DecompressionStream and falls back to the uncompressed files.
+    let graph_size = gzip(&args.out.join("docs.graph"))?;
+    let search_size = gzip(&search_path)?;
     eprintln!(
-        "built {} versions, {} pages, {} fragments in {} blobs, docs.graph {} KiB",
+        "built {} versions, {} pages, {} fragments in {} blobs, docs.graph {} KiB, {search_name} {} KiB",
         releases.len(),
         page_count,
         sources.pages.iter().map(|p| p.frags.len()).sum::<usize>(),
         blob_html.len(),
-        graph_size / 1024
+        graph_size / 1024,
+        search_size / 1024
     );
     Ok(())
 }
