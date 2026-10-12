@@ -190,7 +190,9 @@ version switch). On the diff and console pages, it is the latest release.
 - **Combobox.** The field follows the WAI-ARIA combobox pattern: `role="combobox"`,
   `aria-expanded`, `aria-controls` pointing at the results list, `aria-autocomplete="list"`, and
   `aria-activedescendant` for the selected result. The list has `role="listbox"`; each result is
-  a `role="option"` containing a link, with `aria-selected` on the selected one.
+  a `role="option"` with `aria-selected` on the selected one. Options hold no links or other
+  focusable elements: focus stays in the field, and Enter or a click on an option navigates to
+  its URL from script (each option carries it in a `data-href` attribute).
 - **Announcements.** A visually hidden `role="status"` region reads "Loading the search index…",
   "<n> results" or "No results", and the update message from
   [Keeping things in sync](#keeping-things-in-sync).
