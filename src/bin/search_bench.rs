@@ -116,7 +116,8 @@ const ALL: &str = "{:valid-from \"2000-01-01T00:00:00Z\"}";
 
 fn transact_chunked(db: &Minigraf, facts: &[String], per_tx: usize) {
     for chunk in facts.chunks(per_tx) {
-        db.execute(&format!("(transact [{}])", chunk.join(" "))).unwrap();
+        db.execute(&format!("(transact [{}])", chunk.join(" ")))
+            .unwrap();
     }
 }
 
@@ -195,9 +196,15 @@ const V3: &str = "2003-01-01T00:00:00Z";
 
 fn term_clause(var: &str, term: &str, prefix: bool) -> String {
     if prefix {
-        format!("[?t{var} :term/text ?x{var}] [(starts-with? ?x{var} {})]", edn_str(term))
+        format!(
+            "[?t{var} :term/text ?x{var}] [(starts-with? ?x{var} {})]",
+            edn_str(term)
+        )
     } else {
-        format!("[?t{var} :term/text ?x{var}] [(= ?x{var} {})]", edn_str(term))
+        format!(
+            "[?t{var} :term/text ?x{var}] [(= ?x{var} {})]",
+            edn_str(term)
+        )
     }
 }
 
@@ -211,7 +218,9 @@ fn query_a(db: &Minigraf, terms: &[(&str, bool)]) -> usize {
         } else {
             wh.push_str(&format!("[?p{i} :post/term {}]", edn_str(t)));
         }
-        wh.push_str(&format!(" [?p{i} :post/blob ?blob] [?p{i} :post/weight ?w{i}] "));
+        wh.push_str(&format!(
+            " [?p{i} :post/blob ?blob] [?p{i} :post/weight ?w{i}] "
+        ));
     }
     let q = format!(
         "(query [:find ?slug ?blob ?w0 :valid-at \"{V3}\" :where {wh} \
@@ -255,12 +264,18 @@ fn frags_q() -> String {
 
 /// B2: layout B with blobs numbered (`:blob/n`), lists as "n:weight n:weight …".
 fn build_b2(db: &Minigraf, index: &BTreeMap<String, BTreeMap<String, i64>>) {
-    let blobs: std::collections::BTreeSet<&String> = index.values().flat_map(|b| b.keys()).collect();
+    let blobs: std::collections::BTreeSet<&String> =
+        index.values().flat_map(|b| b.keys()).collect();
     let num: HashMap<&String, usize> = blobs.iter().enumerate().map(|(i, b)| (*b, i)).collect();
     let mut facts: Vec<String> = blobs
         .iter()
         .enumerate()
-        .map(|(i, b)| format!("[:s/b{i} :blob/hash {} {ALL}] [:s/b{i} :blob/n {i} {ALL}]", edn_str(b)))
+        .map(|(i, b)| {
+            format!(
+                "[:s/b{i} :blob/hash {} {ALL}] [:s/b{i} :blob/n {i} {ALL}]",
+                edn_str(b)
+            )
+        })
         .collect();
     let mut n = 0usize;
     for (term, bl) in index {
@@ -318,7 +333,10 @@ fn query_b2(db: &Minigraf, terms: &[(&str, bool)]) -> usize {
     );
     frags
         .iter()
-        .filter(|r| match &r[1] { Value::Integer(n) => sets.iter().all(|set| set.contains(n)), _ => false })
+        .filter(|r| match &r[1] {
+            Value::Integer(n) => sets.iter().all(|set| set.contains(n)),
+            _ => false,
+        })
         .count()
 }
 
@@ -376,7 +394,11 @@ fn main() {
     let index = postings(dist);
     let pairs: usize = index.values().map(|b| b.len()).sum();
     let distinct: HashSet<&String> = index.values().flat_map(|b| b.keys()).collect();
-    println!("blobs {} terms {} postings {pairs}", distinct.len(), index.len());
+    println!(
+        "blobs {} terms {} postings {pairs}",
+        distinct.len(),
+        index.len()
+    );
     let base = dist.join("docs.graph");
     println!(
         "baseline: {} bytes, gz {} bytes",
@@ -390,13 +412,20 @@ fn main() {
         ("exact query (common)", &[("query", false)]),
         ("prefix recurs*", &[("recurs", true)]),
         ("prefix q* (wide)", &[("q", true)]),
-        ("and recursive+rule", &[("recursive", false), ("rule", false)]),
+        (
+            "and recursive+rule",
+            &[("recursive", false), ("rule", false)],
+        ),
         ("and bitemp*+valid", &[("bitemp", true), ("valid", false)]),
     ];
 
     let only: Option<&str> = args.get(2).map(|s| s.as_str());
     for (name, build, query) in [
-        ("A", build_a as fn(&Minigraf, &_), query_a as fn(&Minigraf, &[(&str, bool)]) -> usize),
+        (
+            "A",
+            build_a as fn(&Minigraf, &_),
+            query_a as fn(&Minigraf, &[(&str, bool)]) -> usize,
+        ),
         ("A2", build_a, query_a2),
         ("B", build_b, query_b),
         ("B2", build_b2, query_b2),
