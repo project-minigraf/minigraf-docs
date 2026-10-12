@@ -104,8 +104,8 @@ written by the builder after `docs.graph`. Its name carries the build id (see
   maximal chunk to a file-backed database. One entity per chunk also means no entity holds two
   values of one attribute from one transaction (v2.x known issue #371).
 - **Anchor.** `:blob/anchor` is `Rendered.ids[0]` when the fragment starts with a heading
-  (`Rendered.heading` is set), else `""`. A result links to `<tag>/<slug>/#<anchor>`, or to the
-  page when the anchor is empty.
+  (`Rendered.heading` is set), else `""`. A result links to `<tag>/<slug>/#<anchor>` of its
+  section (see step 7 of [Querying](#querying)), or to the page when there is none.
 - A gzipped copy, `search-<build id>.graph.gz`, is written next to it, as for `docs.graph`.
 
 ## Keeping things in sync
@@ -181,6 +181,10 @@ were exercised against the vendored `@minigraf/browser` in the benchmark.
    lowest fragment order; a blob on two pages gives two results; a blob not in the version gives
    none. Order: score (descending), then page order, then slug, then fragment order. This order
    is total. Show the first 20.
+7. A fragment that does not start with a heading (an `@since`/`@until` block can split a
+   section into several fragments) belongs to the section of the nearest fragment before it on
+   the page, at that version, that does: the result shows that heading and links to that
+   fragment's `:blob/anchor`. A fragment with no heading before it links to the page.
 
 The version is the one the page shows (`body.dataset.version`, which changes on an in-place
 version switch). On the diff and console pages, it is the latest release.
@@ -199,9 +203,9 @@ version switch). On the diff and console pages, it is the latest release.
 - **Announcements.** A visually hidden `role="status"` region reads "Loading the search index…",
   "<n> results" or "No results", and the update message from
   [Keeping things in sync](#keeping-things-in-sync).
-- **Results** show the page title, the fragment's heading (`:frag/heading`) if any, and a snippet:
-  the text around the first match in the blob (from the existing `fetchBlob` cache, fetched for
-  the shown results only), about 160 characters, with matches in `<mark>`.
+- **Results** show the page title, the heading of the fragment's section (step 7) if any, and a
+  snippet: the text around the first match in the blob (from the existing `fetchBlob` cache,
+  fetched for the shown results only), about 160 characters, with matches in `<mark>`.
 - **Keyboard.** `/` focuses the field (unless focus is already in a text input); Up/Down move
   the selection; Enter opens the selected result, or the first if none is selected; Escape closes
   the list and keeps focus in the field; a second Escape clears the field. Tab leaves the field

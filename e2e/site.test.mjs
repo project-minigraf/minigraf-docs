@@ -308,6 +308,27 @@ test("search keyboard: slash, arrows, Enter and Escape", async () => {
   await context.close();
 });
 
+test("a result in a section split by @since/@until opens at its section heading", async () => {
+  // The Pages list on home is split around the Architecture @until/@since blocks, so the
+  // Comparison line is in a fragment that does not start with a heading.
+  const { page, context, errors } = await openPage("v3.0.0/home/");
+  await searchFor(page, "side-by-side comparison ");
+  const opt = page.locator('#search-results [role="option"]', {
+    hasText: "Side-by-side comparison with",
+  });
+  await opt.waitFor();
+  assert.equal(await opt.count(), 1);
+  assert.match(await opt.locator(".search-heading").textContent(), /Pages/);
+  assert.match(await opt.getAttribute("data-href"), /\/v3\.0\.0\/home\/#pages$/);
+  await opt.click();
+  await page.waitForURL(/#pages$/);
+  await page.waitForFunction(() => scrollY > 0);
+  const top = await page.evaluate(() => document.getElementById("pages").getBoundingClientRect().top);
+  assert.ok(top >= 0 && top < 200, "the Pages heading is at the top of the window");
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test("search reports a search index from another build", async () => {
   const { page, context } = await openPage("v3.0.0/home/");
   await page.route(/search-[0-9a-f]+\.graph/, (route) => route.fulfill({ status: 404, body: "" }));

@@ -60,7 +60,12 @@ function loadIndex() {
 
 const fragsByTag = new Map();
 
-/** blob → [{ slug, order, heading }] for the fragments at a version, and the page order. */
+/**
+ * blob → [{ slug, order, heading, head }] for the fragments at a version, and the page order.
+ * A fragment that does not start with a heading (an `@since`/`@until` block can split a section)
+ * belongs to the section of the nearest heading before it on the page: `heading` is that
+ * heading and `head` the blob that starts with it, whose anchor the result links to.
+ */
 function fragsAt(docs, tag) {
   if (!fragsByTag.has(tag)) {
     fragsByTag.set(
@@ -75,10 +80,14 @@ function fragsAt(docs, tag) {
           ),
           navAt(docs, tag),
         ]);
+        rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0) || a[1] - b[1]);
         const byBlob = new Map();
-        for (const [slug, order, blob, heading] of rows) {
+        let section = null;
+        for (const [slug, order, blob, own] of rows) {
+          if (section?.slug !== slug) section = { slug, heading: "", head: "" };
+          if (own) Object.assign(section, { heading: own, head: blob });
           if (!byBlob.has(blob)) byBlob.set(blob, []);
-          byBlob.get(blob).push({ slug, order, heading });
+          byBlob.get(blob).push({ slug, order, heading: section.heading, head: section.head });
         }
         const pages = new Map(nav.map((e, i) => [e.slug, { rank: i, title: e.title }]));
         return { byBlob, pages };
@@ -166,7 +175,7 @@ async function search(q, tag) {
       (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0) ||
       a.order - b.order,
   );
-  for (const r of results) r.anchor = index.anchors.get(r.blob) ?? "";
+  for (const r of results) r.anchor = index.anchors.get(r.head) ?? "";
   return { terms, results: results.slice(0, MAX_RESULTS), total: results.length };
 }
 
