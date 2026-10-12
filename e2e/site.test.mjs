@@ -84,7 +84,7 @@ test("doc pages are complete without JavaScript", async () => {
   const { page, context } = await openPage("v2.0.4/architecture/", { javaScriptEnabled: false });
   assert.equal(await page.locator("h1#page-title").textContent(), "Architecture");
   assert.ok((await page.locator("#frags > .frag").count()) > 5);
-  assert.equal(await page.locator(".picker a[data-version]").count(), 6);
+  assert.equal(await page.locator(".picker a[data-version]").count(), 7);
   assert.ok(await page.locator('.sidebar a[aria-current="page"]').count());
   // v2 documents format v7 as current; v3-only sections are absent.
   const text = await page.locator("#frags").textContent();
