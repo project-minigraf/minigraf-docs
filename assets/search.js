@@ -299,9 +299,16 @@ function render(found, tagNow) {
   }
 }
 
+/** Invalidates any search in flight and schedules a new one. */
+function schedule(delay = DEBOUNCE_MS) {
+  seq++;
+  clearTimeout(timer);
+  timer = setTimeout(run, delay);
+}
+
 async function run() {
   const q = input.value;
-  const mine = ++seq;
+  const mine = seq;
   setLabel();
   if (!parseQuery(q).length) {
     list.innerHTML = "";
@@ -322,7 +329,10 @@ async function run() {
     announce(UPDATED);
     return;
   }
-  if (mine === seq) render(found, tagNow);
+  if (mine !== seq) return;
+  // The version changed (in-place switch) while searching: the observer has scheduled a rerun.
+  if (tagNow !== tag()) return;
+  render(found, tagNow);
 }
 
 function go(i) {
@@ -367,10 +377,12 @@ function isEditable(el) {
 if (box && input && list && status && toggle) {
   box.hidden = false;
   input.addEventListener("focus", onFocus);
-  input.addEventListener("input", () => {
-    clearTimeout(timer);
-    timer = setTimeout(run, DEBOUNCE_MS);
-  });
+  input.addEventListener("input", () => schedule());
+  // An in-place version switch changes body[data-version]: search the new version.
+  new MutationObserver(() => {
+    setLabel();
+    if (input.value) schedule(0);
+  }).observe(document.body, { attributes: true, attributeFilter: ["data-version"] });
   input.addEventListener("keydown", (e) => {
     const n = options().length;
     if (e.key === "ArrowDown") {

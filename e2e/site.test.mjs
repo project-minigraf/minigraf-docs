@@ -262,6 +262,19 @@ test("search follows an in-place version switch", async () => {
   await page.locator('#version-picker a[data-version="v2.0.4"]').click();
   await page.waitForFunction(() => document.body.dataset.version === "v2.0.4");
   assert.equal(await (await searchFor(page, "LogWriter")).count(), 0);
+
+  // Results already shown are redone for the new version.
+  await clearSearch(page);
+  assert.equal(await (await searchFor(page, "LogWriter")).count(), 0);
+  await page.locator("#version-picker summary").click();
+  await page.locator('#version-picker a[data-version="v3.0.0"]').click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('#search-results [role="option"]').length > 0,
+    null,
+    { timeout: 20000 },
+  );
+  const href = await page.locator("#search-opt-0").getAttribute("data-href");
+  assert.match(href, /\/v3\.0\.0\//);
   await context.close();
 });
 
