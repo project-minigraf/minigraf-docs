@@ -289,6 +289,7 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 - A damaged page fails the read or checkpoint that reaches it, with `STG-029` (CRC), `STG-030` (page id) or `STG-031` (generation). It never returns wrong or fewer rows.
 - If the newest meta page is damaged after its WAL is gone, open fails with `STG-033` rather than silently opening an older generation.
 - Unknown `required_features` bits fail with `STG-034`.
+- A file shorter than its meta page's `page_count`, such as an interrupted copy or a partial download, fails at open with `STG-044`, read-write and read-only, and is not modified. Open does not fall back to the other meta page: a valid newer meta means that checkpoint happened. `verify()` reports a `page_count` past the end of the file as `STG-044` too.
 
 **Limits.** String values up to 4,068 bytes; attribute names and keyword values up to 1,024 bytes (`WAL-003`).
 
@@ -340,6 +341,8 @@ WAL file layout:
 ```
 
 On open, the WAL is replayed only on top of the generation it was written against. A version 1 WAL from v2.x next to a file migrated from v7 is still replayed.
+
+A WAL created after a later checkpoint than the file holds, as when a backup of the `.graph` is restored and the current WAL is left in place, fails at open with `STG-047`, read-write and read-only, and both files are left unmodified. Replaying it would apply the later transactions and silently miss the ones between the two checkpoints. A WAL with an older base generation, left by a crash between a checkpoint's commit and its WAL delete, replays as before.
 <!-- @end -->
 
 CRC32-protected entries ensure partial writes (from crashes) are safely discarded. Every WAL write is followed by a flush to disk, controlled by `OpenOptions::synchronous` (see [Performance Tuning](performance-tuning#configuration-knobs)):
