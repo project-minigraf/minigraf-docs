@@ -451,6 +451,6 @@ existing handle is always the right move (#304).
 - Page cache uses read-lock on hits, write-lock only on misses — minimises contention for read-heavy workloads
 - `BrowserDb` (`wasm32-unknown-unknown`) runs single-threaded — all `Arc`/`RwLock`/`Mutex` calls compile as single-threaded stubs under the `browser` feature; no WASM thread support
 <!-- @since v3.0.0 -->
-- `Cursor` (from `query()`) and `FactLog` (from `fact_log()`) are owned and `Send`: they borrow nothing from the handle and can move to another thread. An open `FactLog` pins the committed generation, so checkpoints wait until it is closed (`API-013`).
+- `Cursor` (from `query()`) and `FactLog` (from `fact_log()`) are owned and `Send`: they borrow nothing from the handle and can move to another thread. Each reads one snapshot of the database: the committed generation, pinned, and the uncheckpointed facts at open. Checkpoints keep running while one is open, but the pages they free from a pinned generation stay off the reuse list until the last cursor or log on it is dropped, so the file grows meanwhile. Pins live only in memory: after a crash or reopen those pages are free at once.
 <!-- @end -->
 - `PreparedQuery` holds `Arc` clones of `FactStorage`, `RuleRegistry`, and `FunctionRegistry` — each `execute()` call re-reads live store state (new facts visible) while the query plan is reused
