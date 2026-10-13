@@ -43,7 +43,7 @@ for record in db.fact_log(&filter)? {
 
 - `FactFilter` selects attributes (exact with `attributes`, or by `attribute_prefix`), `entities` and a `tx_range`. The filters are checked on index keys, so excluded records are never decoded.
 - `FactOrder::Tx` (the default) returns records in ascending `tx_count`. The file has no index in transaction order, so the log holds at most `FactFilter::window` records (default 262,144) and scans the selected keys once per window. `FactOrder::Storage` reads in one pass, in storage order.
-- The log reads the database as it was when the log opened. While a log is open, checkpoints are deferred: writes stay in the WAL, automatic checkpoints wait, and `checkpoint()` or `rebuild_indexes()` with work to do fail with `API-013`. Close, drop or finish the log to release it.
+- The log reads the database as it was when the log opened. Writes, checkpoints and `rebuild_indexes()` go on while it is open. The log pins the committed generation it opened on, so no checkpoint reuses a page that generation references: on a database taking many writes, the file grows by the pages checkpoints replace until the log is closed, dropped or read to the end, and later checkpoints reuse them. A query cursor pins the same way until it is closed or dropped. (`API-013`, which development builds returned for a checkpoint while a log was open, is deprecated and never returned.)
 - Like a cursor, a `FactLog` is owned and `Send`. `next_batch(n)` returns records in batches.
 
 ## Building a database from records
