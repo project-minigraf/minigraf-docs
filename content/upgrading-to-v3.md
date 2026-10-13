@@ -33,6 +33,8 @@ v2.x keeps getting data-integrity and security fixes for 12 months after v3.0.0 
 | One fact with two different windows in one `transact` | `API-011`; nothing is written |
 | A whole serialised fact over 4,080 bytes | `WAL-003` for a string over 4,068 bytes or an attribute or keyword over 1,024 bytes |
 | A query that reached a damaged index page fell back to a full scan | The page's `STG-029` / `STG-030` / `STG-031` |
+| A file cut short of its last checkpoint opened, then its queries and checkpoints failed with `INT-049` | `STG-044` at open; the file is not modified |
+| An older `.graph` restored next to a newer WAL replayed it and silently lost the transactions in between | `STG-047` at open; both files are left unmodified |
 
 Every code is described in the [error reference](error-reference).
 
