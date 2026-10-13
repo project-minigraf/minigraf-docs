@@ -302,11 +302,19 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 **Checking a file.** `Minigraf::verify()` walks every committed page and reports logical damage that page checksums cannot see: indexes that disagree (`STG-038`), keys out of order or a page reached twice (`STG-039`), dictionary maps that disagree (`STG-040`), and leaked or doubly used pages (`STG-035`). `Minigraf::rebuild_indexes()` rebuilds the four indexes from an intact one and commits like a checkpoint; if none can serve as the source it fails with `STG-041` and writes nothing.
 <!-- @end -->
 
+<!-- @since v2.0.5 -->
+**Short files.** A file of 1 to 4,095 bytes holds no whole page. It opens as a new database only when its bytes are zeros or a prefix of what a new database writes first, which is what a crash during creation can leave. Anything else, such as a database cut short by an interrupted copy or an unrelated file at the path, fails with `STG-045`, read-write and read-only, and the file is not modified. A zero-length file is a new database (#506).
+<!-- @end -->
+
 ---
 
 ## WAL (Write-Ahead Log)
 
 The WAL sidecar (`<db>.wal`) is present whenever there are uncommitted writes. It is replayed on open and deleted on checkpoint.
+
+<!-- @since v2.0.5 -->
+`checkpoint()` also removes a WAL whose entries are all in the file already, which a crash between a checkpoint's commit and its WAL delete leaves (#457). A handle opened with `wal_checkpoint_threshold(usize::MAX)` does not checkpoint at close: the WAL keeps its pending facts and the next open replays them (#476).
+<!-- @end -->
 
 <!-- @until v3.0.0 -->
 ```
