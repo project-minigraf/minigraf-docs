@@ -85,6 +85,14 @@ frequent checkpoints (smaller WAL, faster open, more checkpoint I/O). Higher = l
 checkpoints (larger WAL, faster writes, slower open on crash recovery). The default of 1000 suits
 mixed workloads. For write-heavy batch ingestion, set to `usize::MAX` to disable auto-checkpoint
 and call `db.checkpoint()` manually after the batch.
+<!-- @until v2.0.5 -->
+Before v2.0.5, closing a handle opened with `usize::MAX` still wrote its pending facts to the
+`.graph` file (#476).
+<!-- @end -->
+<!-- @since v2.0.5 -->
+`usize::MAX` also skips the checkpoint at close: the pending facts stay in the WAL, and the next
+open replays them. Call `db.checkpoint()` before closing to write them into the `.graph` file.
+<!-- @end -->
 
 **`max_derived_facts` / `max_results`** — Safety limits, not performance knobs. Lower them to fail
 fast on runaway recursive rules or unexpectedly large result sets; raise only if a legitimate query
