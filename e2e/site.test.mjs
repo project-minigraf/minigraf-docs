@@ -11,6 +11,10 @@ import { chromium } from "playwright";
 
 const dist = fileURLToPath(new URL("../dist/", import.meta.url));
 const BASE = "/minigraf-docs/";
+// One picker entry per [[version]] in site.toml.
+const VERSIONS = (
+  await readFile(fileURLToPath(new URL("../site.toml", import.meta.url)), "utf8")
+).match(/^\[\[version\]\]$/gm).length;
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -84,7 +88,7 @@ test("doc pages are complete without JavaScript", async () => {
   const { page, context } = await openPage("v2.0.4/architecture/", { javaScriptEnabled: false });
   assert.equal(await page.locator("h1#page-title").textContent(), "Architecture");
   assert.ok((await page.locator("#frags > .frag").count()) > 5);
-  assert.equal(await page.locator(".picker a[data-version]").count(), 7);
+  assert.equal(await page.locator(".picker a[data-version]").count(), VERSIONS);
   assert.ok(await page.locator('.sidebar a[aria-current="page"]').count());
   // v2 documents format v7 as current; v3-only sections are absent.
   const text = await page.locator("#frags").textContent();
