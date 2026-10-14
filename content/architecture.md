@@ -68,6 +68,7 @@ src/
 │   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
 │   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
 ├── query/datalog/              — parser, executor, matcher, evaluator, stratification, rules, functions, optimizer, prepared, magic_sets, types (as in v2.x)
+├── query/engine/               — streaming query engine: plan (which queries it runs), scan (one pattern over key ranges), filter (expressions, pseudo-attributes), project (ids → values), cells, batches and ids
 └── storage/
     ├── mod.rs                  — StorageBackend trait, CommittedReader trait, LegacyHeaderV7 (v7 migration only)
     ├── persistent_facts.rs     — PersistentFactStorage: v8 save/load, copy-on-write checkpoint, v7 → v8 migration
@@ -387,6 +388,19 @@ A checkpoint that fails after it may have written (a failed write, a full disk, 
 4. **Evaluate rules** — `StratifiedEvaluator` stratifies rules; for each stratum:
    - Positive rules evaluated via `RecursiveEvaluator` (semi-naive fixed-point iteration)
    - Mixed rules (containing `not` / `not-join` / `Expr`) run positive patterns first, then apply negation filters and expr clauses per binding
+
+<!-- @since v3.0.0 -->
+### Streaming engine
+
+Queries of one pattern, with expression clauses and per-fact pseudo-attributes (`:db/valid-from`, `:db/valid-to`, `:db/tx-count`, `:db/tx-id`) on its entity, and plain `:find` variables, run on a streaming engine (`query/engine/`) instead of the executor above. Every other query, and reads inside a `WriteTransaction`, still take the executor; later 3.x releases move them over without API changes.
+
+- **Plan.** The pattern's constant and bound positions choose the index range: EAVT for a known entity, AVET for an attribute and value (`[?e :person/name "Alice"]` reads only the entries for `"Alice"`), AEVT for an attribute alone. Expression clauses follow in the executor's order.
+- **Scan.** Reads the committed index keys of that range, deciding net-assert on the keys, then the uncheckpointed facts of the same range; a triple with uncheckpointed records is decided by them alone. `:as-of` and valid time are applied while reading.
+- **Batches.** Operators pass columnar batches of up to 1,024 rows of entity and ident ids; ids become values only for the rows a query returns.
+- **Cursors.** A `Cursor` pulls one batch from the operators when it runs out of rows, so memory holds one batch, and closing or dropping the cursor stops the work. A read error that happens after some rows of a `next_batch` call were gathered is returned by the next call. `execute` reads every batch at once and returns the same rows.
+
+The engine returns the same rows as the executor, as a bag: in the test suite every query it runs is also run by the executor and the answers are compared.
+<!-- @end -->
 
 ### Rule Registration
 
