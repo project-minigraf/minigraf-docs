@@ -450,6 +450,9 @@ existing handle is always the right move (#304).
 - Function registry (`FunctionRegistry`) is `Arc<RwLock<FunctionRegistry>>` — shared between all query executions; built-in aggregates registered at startup; user-defined aggregates and predicates registered via `register_aggregate` / `register_predicate` (Phase 7.7b)
 - Page cache uses read-lock on hits, write-lock only on misses — minimises contention for read-heavy workloads
 - `BrowserDb` (`wasm32-unknown-unknown`) runs single-threaded — all `Arc`/`RwLock`/`Mutex` calls compile as single-threaded stubs under the `browser` feature; no WASM thread support
+<!-- @range v2.0.6..v3.0.0 -->
+- A query on another thread sees each committed transaction whole, and all its patterns read the same state of the database: a commit adds its facts under one lock, a query does all its lookups under one lock (#554, #555). A checkpoint holds the store's write lock from its first page write until its new state is published, so queries wait for it rather than read it half-written (#558).
+<!-- @end -->
 <!-- @since v3.0.0 -->
 - `Cursor` (from `query()`) and `FactLog` (from `fact_log()`) are owned and `Send`: they borrow nothing from the handle and can move to another thread. Each reads one snapshot of the database: the committed generation, pinned, and the uncheckpointed facts at open. Checkpoints keep running while one is open, but the pages they free from a pinned generation stay off the reuse list until the last cursor or log on it is dropped, so the file grows meanwhile. Pins live only in memory: after a crash or reopen those pages are free at once.
 <!-- @end -->
