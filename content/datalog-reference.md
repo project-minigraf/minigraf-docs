@@ -355,6 +355,21 @@ Each clause is `[entity attribute value]`. Any position can be a variable, a lit
 [?e :person/age 30]          ;; find all entities aged 30
 ```
 
+<!-- @since v3.0.0 -->
+### Join rules
+
+The answer of a join does not depend on the order the planner runs the patterns in:
+
+- **Floats** are equal by IEEE `==` when a variable joins two patterns: `0.0` equals `-0.0`, and NaN equals nothing. A float *constant* in a pattern still matches any float within `f64::EPSILON`.
+- **Keyword or ref.** A keyword value equals a ref to the entity it names. When one variable is bound by several patterns, its value comes from the first of them in the `:where` text: `[?a :friend ?b] [?b :name "Bob"]` returns `?b` as the keyword `:friend` stored, and `[?b :name "Bob"] [?a :friend ?b]` as the entity's ref. An expression binding (`[(f …) ?v]`) overwrites the variable where it runs, and later patterns keep its value.
+
+These rules apply to the top-level `:where` of a query. `or` branches, `not` bodies and rule bodies keep the 2.x behaviour.
+<!-- @end -->
+
+### Pseudo-attributes
+
+`:db/valid-from`, `:db/valid-to`, `:db/tx-count` and `:db/tx-id` (which need `:valid-at :any-valid-time`) read the metadata of a fact matched by another pattern on the same entity: `[?e :person/age ?a] [?e :db/tx-count ?t]` binds the tx-count of the `:person/age` fact. With several patterns on that entity, the fact comes from the last of them the planner runs before the pseudo-attribute pattern, so the answer can depend on the plan ([#594](https://github.com/project-minigraf/minigraf/issues/594)). A pseudo-attribute pattern with no such pattern before it matches every visible fact of its entity, one row each. `:db/valid-at` binds the query's valid time (`nil` under `:any-valid-time`), once per visible fact of the entity.
+
 ---
 
 ## Bi-temporal Queries
