@@ -276,6 +276,10 @@ Entities are UUIDs internally; you can use keywords as shorthand in the REPL (th
            [:alice :employment/status :contractor {:valid-from "2024-01-01" :valid-to "2025-01-01"}]])
 ```
 
+<!-- @until v3.0.0 -->
+> **v2.x:** two values of one entity and attribute written in one `transact`, as in the last example, read back as one value ([#371](https://github.com/project-minigraf/minigraf/issues/371), fixed in v3.0.0). Write each in its own `transact`.
+<!-- @end -->
+
 Valid-time values are ISO 8601 strings (`"2024-01-15"` or `"2024-01-15T10:00:00Z"`). Omitting `:valid-to` leaves it open-ended (valid forever).
 
 <!-- @since v3.0.0 -->

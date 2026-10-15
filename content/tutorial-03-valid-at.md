@@ -190,6 +190,10 @@ This form lets you mix valid windows within a single `transact`:
 
 This is a matter of convenience, not semantics — both forms produce identical facts in the database.
 
+<!-- @until v3.0.0 -->
+> **v2.x:** two values of one entity and attribute in one `transact` read back as one value ([#371](https://github.com/project-minigraf/minigraf/issues/371), fixed in v3.0.0). Use one `transact` per value there.
+<!-- @end -->
+
 ---
 
 ## When to use which
