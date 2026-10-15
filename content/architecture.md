@@ -67,7 +67,7 @@ src/
 ├── graph/
 │   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
 │   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
-├── query/datalog/              — parser, executor, matcher, evaluator, stratification, rules, functions, optimizer, prepared, magic_sets, types (as in v2.x)
+├── query/datalog/              — parser, executor, matcher, evaluator, stratification, rules, functions, optimizer, prepared, magic_sets, types (as in v2.x; the optimizer reorders on every build, the `wasm` feature is a deprecated no-op)
 ├── query/engine/               — streaming query engine: plan (which queries it runs), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), project (ids → values), cells, batches and ids
 └── storage/
     ├── mod.rs                  — StorageBackend trait, CommittedReader trait, LegacyHeaderV7 (v7 migration only)

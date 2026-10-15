@@ -615,7 +615,12 @@ Use `MINIGRAF_WASI_WASM_PATH` or the `wasmPath` option to point the loader at an
 
 Both platforms support WASI. Build the binary as above and follow the platform's WASM deployment guide. Note that these platforms' WASI support is evolving — check the respective documentation for the latest compatibility status.
 
+<!-- @until v3.0.0 -->
 The `wasm` feature flag already gates `optimizer.rs` to keep the browser binary lean.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+Every build, browser and WASI included, orders query clauses by selectivity; no answer depends on that order. The `wasm` feature flag is deprecated and does nothing.
+<!-- @end -->
 
 ### Portability: export and import as a `.graph` file
 
