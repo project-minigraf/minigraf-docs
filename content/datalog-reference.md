@@ -361,9 +361,10 @@ Each clause is `[entity attribute value]`. Any position can be a variable, a lit
 The answer of a join does not depend on the order the planner runs the patterns in:
 
 - **Floats** are equal by IEEE `==` when a variable joins two patterns: `0.0` equals `-0.0`, and NaN equals nothing. A float *constant* in a pattern still matches any float within `f64::EPSILON`.
-- **Keyword or ref.** A keyword value equals a ref to the entity it names. When one variable is bound by several patterns, its value comes from the first of them in the `:where` text: `[?a :friend ?b] [?b :name "Bob"]` returns `?b` as the keyword `:friend` stored, and `[?b :name "Bob"] [?a :friend ?b]` as the entity's ref. An expression binding (`[(f …) ?v]`) overwrites the variable where it runs, and later patterns keep its value.
+- **Keyword or ref.** A keyword value equals a ref to the entity it names. When one variable is bound by several patterns, its value comes from the first of them in the `:where` text: `[?a :friend ?b] [?b :name "Bob"]` returns `?b` as the keyword `:friend` stored, and `[?b :name "Bob"] [?a :friend ?b]` as the entity's ref.
+- **Expression bindings unify.** An expression binding (`[(f …) ?v]`) whose variable another clause also binds keeps only the rows where its result equals that value, with the same equality, wherever it runs (see [Arithmetic bindings](#arithmetic-bindings)). Expressions count among the binders: the value comes from the first clause in the `:where` text that binds the variable.
 
-These rules apply to the top-level `:where` of a query. `or` branches, `not` bodies and rule bodies keep the 2.x behaviour.
+The keyword-or-ref rule applies to the top-level `:where` of a query; `or` branches, `not` bodies and rule bodies keep the 2.x choice of kind. Expression unification applies everywhere.
 <!-- @end -->
 
 ### Pseudo-attributes
@@ -824,6 +825,23 @@ An arithmetic binding evaluates the expression and binds the result to an output
 [(integer? ?v) ?is-int]
 [(string? ?v) ?is-str]
 ```
+
+<!-- @since v3.0.0 -->
+When another clause also binds the output variable, the binding is a test: the row is kept only if the result equals the variable's value (floats by IEEE `==`, so `0.0` equals `-0.0`; an integer never equals a float; NaN equals nothing), whatever order the planner runs the clauses in.
+
+```datalog
+;; [:a :age 30] [:b :age 40] [:p1 :score 41]
+[:find ?a ?x :where [?e :age ?a] [:p1 :score ?x] [(+ ?a 1) ?x]]
+;; => [40 41]
+
+[(+ ?v 1) ?v]                     ;; never matches
+[(* ?a 2) ?x] [(+ ?a ?a) ?x]      ;; both bind ?x: they must agree
+```
+<!-- @end -->
+
+<!-- @until v3.0.0 -->
+An expression binding replaces the variable's value where the planner runs it, even when another clause also binds it.
+<!-- @end -->
 
 Combine with aggregation:
 
