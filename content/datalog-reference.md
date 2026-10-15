@@ -369,7 +369,21 @@ The keyword-or-ref rule applies to the top-level `:where` of a query; `or` branc
 
 ### Pseudo-attributes
 
+<!-- @until v3.0.0 -->
 `:db/valid-from`, `:db/valid-to`, `:db/tx-count` and `:db/tx-id` (which need `:valid-at :any-valid-time`) read the metadata of a fact matched by another pattern on the same entity: `[?e :person/age ?a] [?e :db/tx-count ?t]` binds the tx-count of the `:person/age` fact. With several patterns on that entity, the fact comes from the last of them the planner runs before the pseudo-attribute pattern, so the answer can depend on the plan ([#594](https://github.com/project-minigraf/minigraf/issues/594)). A pseudo-attribute pattern with no such pattern before it matches every visible fact of its entity, one row each. `:db/valid-at` binds the query's valid time (`nil` under `:any-valid-time`), once per visible fact of the entity.
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
+`:db/valid-from`, `:db/valid-to`, `:db/tx-count` and `:db/tx-id` (which need `:valid-at :any-valid-time`) read the metadata of one fact: the fact matched by their **source**, the nearest pattern **before** them in the `:where` text with the same entity term and a stored attribute (a keyword, or a variable as in `[?e ?a _]`). `[?e :person/name ?n] [?e :person/age ?a] [?e :db/tx-count ?t]` binds the tx-count of the `:person/age` fact, whatever order the planner runs the patterns in.
+
+- **Same entity term.** The same variable, the same `$slot`, or constants naming the same entity (`:alice` and its UUID). `?e` and `:alice` are not the same term even when `?e` is `:alice`; `_` and `?_x` are never the same as anything.
+- **Scope.** The search starts in the pseudo-attribute's own clause list, then continues before each enclosing `not` or `or`. It crosses a `not-join` or `or-join` only for an entity variable listed in its join variables. It never searches a sibling `or` branch, and stops at a rule body: a rule never reads its caller's patterns.
+- **Inside `not` / `or`.** A pseudo-attribute reads the outer fact: `[?e :person/name ?n] (not [?e :db/tx-count 1])` excludes the entities whose `:person/name` fact is from transaction 1.
+- **No source** is a parse-time error, `PRS-081`. To read every fact of an entity, put `[?e ?a _]` before the pseudo-attribute pattern: one row per fact.
+- The value position binds the metadata, or checks it when it is a constant or a variable bound elsewhere.
+
+`:db/valid-at` binds the query's valid time (`nil` under `:any-valid-time`), once per visible fact of the entity; it needs no source.
+<!-- @end -->
 
 ---
 
