@@ -227,8 +227,8 @@ The two layers serve complementary roles:
            [:task-c :task/name "Write tests"]
            [:task-d :task/name "Deploy"]
            [:task-a :task/blocks :task-b]
-           [:task-b :task/blocks :task-c]
-           [:task-b :task/blocks :task-d]])
+           [:task-b :task/blocks :task-c]])
+(transact [[:task-b :task/blocks :task-d]])  ; a second :task/blocks of :task-b in its own transact (v2.x, #371)
 
 ;; Recursive rule: all tasks transitively blocked by a given task
 (rule [(blocked-by ?blocker ?blocked)

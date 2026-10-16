@@ -177,17 +177,17 @@ rules it needs even if they appear elsewhere on this page.
 ```datalog
 ;; Social graph: how many people does each user follow?
 (transact [[:alice :follows :bob]
-           [:alice :follows :carol]
            [:bob   :follows :carol]])
+(transact [[:alice :follows :carol]])
 
 (query [:find ?person (count ?followed)
-        :with ?followed
         :where [?person :follows ?followed]])
 ;; => [(:alice, 2), (:bob, 1)]
 ```
 
 **Notes:**
-- `:with ?followed` keeps each followed-entity row distinct before counting; without it, duplicate `(?person, ?followed)` pairs would collapse before the aggregate
+- The aggregate groups by the other `:find` variables (`?person`) and counts every `?followed` bound in the group. Adding `:with ?followed` would put it in the grouping key and give one row of count 1 per edge
+- Alice's second edge is in its own `transact` so the recipe gives the same answer on v2.x, which reads two values of one entity and attribute written in one `transact` back as one ([#371](https://github.com/project-minigraf/minigraf/issues/371))
 - For in-degree (how many edges point *to* each node): `[?follower :follows ?person]`, count `?follower`
 - Use `count-distinct ?followed` if your model can have duplicate edges between the same pair
 
@@ -200,11 +200,11 @@ rules it needs even if they appear elsewhere on this page.
 ```datalog
 ;; Call graph: find all core functions reachable from :main — skip I/O layer nodes
 (transact [[:main    :calls :init]
-           [:main    :calls :process]
            [:process :calls :save]
            [:save    :layer :io]
            [:init    :layer :core]
            [:process :layer :core]])
+(transact [[:main    :calls :process]])  ; a second :calls of :main in its own transact (v2.x, #371)
 
 (rule [(core-reachable ?from ?to)
        [?from :calls ?to]
