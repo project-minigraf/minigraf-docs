@@ -712,7 +712,7 @@ The on-call engineer suspected the auth deploy, because the api deploy was not v
 
 Record which way code went at each `if`, ternary and `switch`, and the values that drove each choice. Store each run in its own Minigraf file. Then compare two runs and find the first decision where they parted ways, and the input changes that came before it.
 
-This is aimed at code nobody on the team knows well, such as large amounts of AI-generated code. An engineer on call should be able to find the decision that went wrong without reading the code. A Java proof of concept exists, built as a compiler plugin.
+This is aimed at code nobody on the team knows well, such as large amounts of AI-generated code. An engineer on call should be able to find the decision that went wrong without reading the code. A Java proof of concept, built as a compiler plugin, is in [decision_telemetry](https://github.com/project-minigraf/decision_telemetry). Its [run schema](https://github.com/project-minigraf/decision_telemetry/blob/main/docs/SCHEMA.md) is language-neutral, so other languages can write runs the same tools read.
 
 **The problem it solves.** The same checkout runs twice. The only difference is how fast a background loyalty lookup is. Nothing fails, but the totals differ: 12150 in one run, 13500 in the other. A diff of the two runs points to a cache lookup that found nothing in the slow run, so the customer lost a discount, and to the lookup's latency as the likely cause.
 
