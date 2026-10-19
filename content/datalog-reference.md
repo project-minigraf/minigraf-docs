@@ -592,6 +592,15 @@ Each branch (or a single clause) may contain any `WhereClause`: `Pattern`, `Rule
 - `or`: all branches must introduce the same set of new variable names. Mismatched sets → parse error.
 - `or-join`: all `join_vars` must be bound by a preceding clause → parse error if not.
 
+<!-- @since v3.0.0 -->
+### How branches meet the outer row
+
+An `or` and an `or-join` run after every other clause of their clause list except the `not`s that need what they bind, in text order. For each outer row, a branch takes from it every variable the branch names (`or`) or its join variables (`or-join`), and compares them with the facts it matches as joins compare them (see [Join rules](#join-rules)): floats by IEEE `==`, and a keyword equals a ref to the entity it names. The outer row's value is the one kept. A branch that does not name a variable constrains nothing about it: `(or-join [?e] [?x :a 1] [?e :b 2])` keeps every outer row when some entity has `:a 1`. The rows an `or` / `or-join` returns are distinct: two rows with equal values in every variable bound so far are one row (`0.0` equals `-0.0`; a keyword never equals a ref).
+<!-- @end -->
+<!-- @until v3.0.0 -->
+A branch with no `not`, no expression reading an outer variable and no pseudo-attribute reading an outer pattern is evaluated alone and joined to the outer rows by exact value equality, so a keyword never meets a ref to the entity it names, branches naming different outer variables meet no outer row, and an `or-join` branch that does not bind every join variable matches nothing. Other branches start from each outer row and compare as joins do ([#546](https://github.com/project-minigraf/minigraf/issues/546)).
+<!-- @end -->
+
 ---
 
 ## Aggregation
