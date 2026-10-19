@@ -147,6 +147,221 @@ A bisect finds, weeks later, that a commit introduced a bug. The fact is about t
 - **Server-side work.** Watching every pushed branch means running next to the git host, not only on laptops.
 - **Not everything needs two time axes.** Early warnings and cross-file merges mostly need the graph. Shared resolutions, facts learned later and ref history are where the two axes earn their place.
 
+## Supply chain history
+
+Store each release's full dependency tree, and add vulnerability and license findings as they are published. The two time axes map cleanly:
+
+- **Valid time** is when a release contained a package version.
+- **Transaction time** is when you learned something about that package.
+
+The advisory almost always arrives after the release. That gap is the point.
+
+**Questions it answers**
+
+- Which releases shipped with this package version, directly or through another package?
+- When the release shipped, did we already know the version was vulnerable?
+- How long did each affected release stay in use after the advisory was known?
+
+**Why Minigraf fits.** Transitive dependencies are a recursive rule. "What we knew at ship time" is an `:as-of` query; "what was actually in the release" is a `:valid-at` query. Most tools keep only one of these. Inputs are easy to find: SBOM files (CycloneDX, SPDX), lockfiles and OSV advisories. Releases hang off the commits in the [git sidecar](#git-sidecar).
+
+**Schema sketch.** Releases and packages share one `:depends-on` attribute, so one rule follows the whole tree. Advisories carry `:advisory/affects`.
+
+```datalog
+;; Transactions 1 and 2: release 1.4.0 ships on 2026-02-01.
+(transact {:valid-from "2026-02-01"} [[:app-1-4 :release/tag "1.4.0"]
+                                      [:app-1-4 :depends-on :http-2-3]])
+(transact {:valid-from "2026-02-01"} [[:http-2-3 :package/name "http 2.3"]
+                                      [:http-2-3 :depends-on :log-2-14]
+                                      [:log-2-14 :package/name "log 2.14"]])
+
+;; Transaction 3: months later, an advisory is published. The flaw
+;; existed since the package's own release, so that is its valid time.
+(transact {:valid-from "2025-11-01"} [[:adv-77 :advisory/id "ADV-2026-077"]
+                                      [:adv-77 :advisory/affects :log-2-14]])
+
+(rule [(dep ?a ?b) [?a :depends-on ?b]])
+(rule [(dep ?a ?b) [?a :depends-on ?m] (dep ?m ?b)])
+
+;; Did we know at ship time?
+(query [:find ?tag ?pkg ?adv
+        :as-of 2
+        :valid-at "2026-02-01"
+        :where [?r :release/tag ?tag]
+               (dep ?r ?p)
+               [?a :advisory/affects ?p]
+               [?a :advisory/id ?adv]
+               [?p :package/name ?pkg]])
+;; => no results
+
+;; Was the release affected, as we know now?
+(query [:find ?tag ?pkg ?adv
+        :valid-at "2026-02-01"
+        :where [?r :release/tag ?tag]
+               (dep ?r ?p)
+               [?a :advisory/affects ?p]
+               [?a :advisory/id ?adv]
+               [?p :package/name ?pkg]])
+;; => "1.4.0" "log 2.14" "ADV-2026-077"
+```
+
+## Test impact and flaky tests
+
+Store which tests cover which code, and every test result per commit. Large CI systems build this in-house. A small team could keep it in one file.
+
+**Questions it answers**
+
+- Which tests must run for this change? This is reverse reachability from the changed functions.
+- Is this test flaky, or did it start failing at a real commit?
+- Which code had no covering test in a given release?
+
+**Why Minigraf fits.** Test selection is a graph traversal from changed code to the tests that reach it, through call edges. Telling flaky from broken needs result history across commits. Coverage and calls come from the [git sidecar](#git-sidecar) index.
+
+**Schema sketch.** `:covers` links a test to a function; `:calls` links functions. Each run is an entity with `:run/test`, `:run/commit` and `:run/outcome`.
+
+```datalog
+(transact [[:fn-auth :fn/name "check_token"]
+           [:fn-cart :fn/name "add_to_cart"]
+           [:fn-cart :calls :fn-auth]
+           [:t-login :test/name "test_login"]
+           [:t-login :covers :fn-auth]
+           [:t-cart :test/name "test_cart"]
+           [:t-cart :covers :fn-cart]
+           [:fn-fmt :fn/name "format_price"]
+           [:t-fmt :test/name "test_format"]
+           [:t-fmt :covers :fn-fmt]])
+
+(rule [(calls ?a ?b) [?a :calls ?b]])
+(rule [(calls ?a ?b) [?a :calls ?m] (calls ?m ?b)])
+(rule [(reaches ?t ?f) [?t :covers ?f]])
+(rule [(reaches ?t ?f) [?t :covers ?m] (calls ?m ?f)])
+
+;; check_token changed. Which tests must run?
+(query [:find ?test
+        :where [?f :fn/name "check_token"]
+               (reaches ?t ?f)
+               [?t :test/name ?test]])
+;; => "test_login", "test_cart"
+
+(transact [[:run-1 :run/test :t-cart]
+           [:run-1 :run/commit "4f1a9c2"]
+           [:run-1 :run/outcome "pass"]
+           [:run-2 :run/test :t-cart]
+           [:run-2 :run/commit "4f1a9c2"]
+           [:run-2 :run/outcome "fail"]
+           [:run-3 :run/test :t-login]
+           [:run-3 :run/commit "4f1a9c2"]
+           [:run-3 :run/outcome "fail"]])
+
+;; Tests that both passed and failed on the same commit
+(query [:find ?test ?commit
+        :where [?a :run/test ?t]
+               [?a :run/commit ?commit]
+               [?a :run/outcome "pass"]
+               [?b :run/test ?t]
+               [?b :run/commit ?commit]
+               [?b :run/outcome "fail"]
+               [?t :test/name ?test]])
+;; => "test_cart" "4f1a9c2"
+```
+
+`test_login` failed but never passed on that commit, so it is broken, not flaky.
+
+## AI code provenance
+
+Record which code an AI agent wrote, under which task and model, and every human edit after. Nothing is overwritten, so the full story of each function stays queryable.
+
+**Questions it answers**
+
+- Which code in this release is still unedited agent output?
+- Which bugs trace back to code written for a given task or by a given model?
+- Who last changed this function, and what did it look like before?
+
+**Why Minigraf fits.** Provenance is a history question, and a bi-temporal store never loses history. Links between code, tasks, commits and bug reports form a graph. Code units come from the [git sidecar](#git-sidecar); it pairs naturally with agent memory.
+
+**Schema sketch.** A code unit carries `:unit/name`, `:unit/author`, `:unit/model` and `:unit/task`. Each edit is an entity with `:edit/unit` and `:edit/author`. Bugs carry `:bug/traced-to`.
+
+```datalog
+(transact [[:u-1 :unit/name "billing::apply_discount"]
+           [:u-1 :unit/author "agent"]
+           [:u-1 :unit/model "model-a"]
+           [:u-1 :unit/task "TASK-118"]
+           [:u-2 :unit/name "billing::round_total"]
+           [:u-2 :unit/author "agent"]
+           [:u-2 :unit/model "model-a"]
+           [:u-2 :unit/task "TASK-118"]
+           [:u-3 :unit/name "billing::tax_rate"]
+           [:u-3 :unit/author "dana"]])
+(transact [[:edit-1 :edit/unit :u-2]
+           [:edit-1 :edit/author "dana"]])
+(transact [[:bug-9 :bug/title "Discount applied twice"]
+           [:bug-9 :bug/traced-to :u-1]])
+
+;; Agent-written code that no person has edited
+(query [:find ?name
+        :where [?u :unit/author "agent"]
+               [?u :unit/name ?name]
+               (not-join [?u] [?e :edit/unit ?u])])
+;; => "billing::apply_discount"
+
+;; Trace a bug back to the task and model that wrote the code
+(query [:find ?bug ?task ?model
+        :where [?b :bug/traced-to ?u]
+               [?b :bug/title ?bug]
+               [?u :unit/task ?task]
+               [?u :unit/model ?model]])
+;; => "Discount applied twice" "TASK-118" "model-a"
+```
+
+## Migration tracker
+
+Track a long refactor, such as moving every call site off an old API. A scanner finds each call site on every commit and records it with its file and owner. The store holds the whole history of the migration.
+
+**Questions it answers**
+
+- How many call sites remain per team, and how has that changed over time?
+- Did anyone add new uses of the old API after the migration started?
+- Which sites remain right now?
+
+**Why Minigraf fits.** Progress and regressions are history queries. Call sites link to files and owners, so grouping is a plain join. It is small and concrete, which makes it a good first project with Minigraf. Call sites can come from the [git sidecar](#git-sidecar) index.
+
+**Schema sketch.** A call site carries `:site/file`, `:site/owner` and `:site/api`. Its valid time is the time the call existed in the code: a migrated site gets a `:valid-to`.
+
+```datalog
+;; The migration starts on 2026-05-01. Site s-1 is migrated on 2026-06-10.
+(transact {:valid-from "2026-05-01"}
+          [[:s-1 :site/file "src/pay/charge.rs"]
+           [:s-1 :site/owner "payments"]
+           [:s-1 :site/api "old_client" {:valid-from "2026-05-01" :valid-to "2026-06-10"}]
+           [:s-2 :site/file "src/search/index.rs"]
+           [:s-2 :site/owner "search"]
+           [:s-2 :site/api "old_client"]
+           [:s-3 :site/file "src/pay/refund.rs"]
+           [:s-3 :site/owner "payments"]
+           [:s-3 :site/api "old_client"]])
+
+;; On 2026-07-01, someone adds a new use.
+(transact {:valid-from "2026-07-01"}
+          [[:s-4 :site/file "src/pay/payout.rs"]
+           [:s-4 :site/owner "payments"]
+           [:s-4 :site/api "old_client"]])
+
+;; Remaining sites per team on 2026-06-15
+(query [:find ?owner (count ?s)
+        :valid-at "2026-06-15"
+        :where [?s :site/api "old_client"]
+               [?s :site/owner ?owner]])
+;; => "payments" 1, "search" 1
+
+;; Uses added after the migration started
+(query [:find ?file ?from
+        :valid-at :any-valid-time
+        :where [?s :site/file ?file]
+               [?s :site/api "old_client"]
+               [?s :db/valid-from ?from]
+               [(> ?from 1777593600000)]])   ;; 2026-05-01 in Unix ms
+;; => "src/pay/payout.rs" 1782864000000
+```
+
 ## Verification results
 
 Formal verifiers such as Verus, Creusot, Kani and Dafny prove properties of code for every input. Most of them keep nothing between runs, or keep only a cache keyed by a hash of each proof obligation. A key-value file does that job well. What gets thrown away is the history:
