@@ -68,7 +68,7 @@ src/
 │   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
 │   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
 ├── query/datalog/              — parser, executor, matcher, evaluator, stratification, rules, functions, optimizer, prepared, magic_sets, types (as in v2.x; the optimizer reorders on every build, the `wasm` feature is a deprecated no-op)
-├── query/engine/               — streaming query engine: plan (which queries it runs), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), project (ids → values), cells, batches and ids
+├── query/engine/               — streaming query engine: plan (which queries it runs), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), anti (`not` / `not-join`, hashed or per row from a seed), project (ids → values), cells, batches and ids
 └── storage/
     ├── mod.rs                  — StorageBackend trait, CommittedReader trait, LegacyHeaderV7 (v7 migration only)
     ├── persistent_facts.rs     — PersistentFactStorage: v8 save/load, copy-on-write checkpoint, v7 → v8 migration
@@ -392,11 +392,12 @@ A checkpoint that fails after it may have written (a failed write, a full disk, 
 <!-- @since v3.0.0 -->
 ### Streaming engine
 
-Queries whose `:where` holds patterns and expression clauses, and whose `:find` holds plain variables, run on a streaming engine (`query/engine/`) instead of the executor above. Every other query (`or`, `not`, rules, aggregates), and reads inside a `WriteTransaction`, still take the executor; later 3.x releases move them over without API changes.
+Queries whose `:where` holds patterns, expression clauses and `not` / `not-join`, and whose `:find` holds plain variables, run on a streaming engine (`query/engine/`) instead of the executor above. Every other query (`or`, rules, aggregates, a negation that calls a rule), and reads inside a `WriteTransaction`, still take the executor; later 3.x releases move them over without API changes.
 
 - **Plan.** Clauses run in the executor's order. The first pattern's constant and bound positions choose the index range: EAVT for a known entity, AVET for an attribute and value (`[?e :person/name "Alice"]` reads only the entries for `"Alice"`), AEVT for an attribute alone.
 - **Joins.** Each later pattern is an `IndexNestedLoopJoin` when its entity is a variable already bound (one entity's range per row, committed and uncheckpointed), or a `HashJoin` otherwise (a join on the value or attribute position, or a cross product), whose table holds the side with the smaller estimate. Join keys follow the [join rules](datalog-reference#join-rules).
 - **Pseudo-attributes.** The parser names each per-fact pseudo-attribute's source pattern ([pseudo-attributes](datalog-reference#pseudo-attributes)); the source's scan or join fills a metadata column (valid from/to, tx count, tx id) from the fact's key, and the pseudo-attribute pattern binds or checks against it. A `:db/valid-at` pattern joins with every visible fact of its entity.
+- **Negation.** `not` and `not-join` are an `AntiJoin`: it keeps the rows for which the body has no row, and never removes duplicates. A body with the same rows for every outer row (its expressions and pseudo-attributes read only variables its own patterns bind) runs once, and its rows' values of the shared variables form a hash set. Any other body, and one whose first pattern's entity comes from the outer row, runs once per row from a one-row seed of the values it shares, and stops at its first row; an entity-bound body costs one index probe per row and holds nothing. Comparisons follow the [join rules](datalog-reference#comparing-with-the-outer-row).
 - **Scan.** Reads the committed index keys of that range, deciding net-assert on the keys, then the uncheckpointed facts of the same range; a triple with uncheckpointed records is decided by them alone. `:as-of` and valid time are applied while reading.
 - **Batches.** Operators pass columnar batches of up to 1,024 rows of entity and ident ids; ids become values only for the rows a query returns.
 - **Cursors.** A `Cursor` pulls one batch from the operators when it runs out of rows, so memory holds one batch, and closing or dropping the cursor stops the work. A read error that happens after some rows of a `next_batch` call were gathered is returned by the next call. `execute` reads every batch at once and returns the same rows.

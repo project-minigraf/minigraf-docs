@@ -530,6 +530,17 @@ Exclude outer bindings when there *exists* some assignment to inner-only variabl
 
 **Safety constraint**: every variable in `join_vars` must be bound by an outer clause — enforced at parse time. Nesting `not-join` inside `not` or another `not-join` is rejected.
 
+<!-- @since v3.0.0 -->
+### Comparing with the outer row
+
+A body takes from the outer row every variable it names (`not`) or its join variables (`not-join`), and compares them with the facts it matches as joins compare them (see [Join rules](#join-rules)): floats by IEEE `==`, so `0.0` equals `-0.0` and NaN equals nothing, and a keyword equals a ref to the entity it names. This holds whatever the body holds (patterns, expressions, rule calls) and wherever it appears (a query, an `or` branch, a rule body). A float *constant* written in the body still matches within `f64::EPSILON`. A `:db/valid-at` pattern in a body binds the query's valid time, as it does outside.
+
+An expression that fails on a body row (a type mismatch, a division by zero, an unknown predicate) drops that row, so it cannot exclude the outer row.
+<!-- @end -->
+<!-- @until v3.0.0 -->
+A body whose only clauses are patterns compares the outer row's values as joins do. A body with an expression, a body in an `or` branch or rule, or one in a query that calls a rule, substitutes each outer value into its patterns as a constant, so an imported float matches within `f64::EPSILON` ([#546](https://github.com/project-minigraf/minigraf/issues/546)).
+<!-- @end -->
+
 ### Stratification
 
 Negation uses stratified evaluation (Datalog^¬). The rule dependency graph is analysed at registration time:
