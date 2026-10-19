@@ -8,6 +8,8 @@ Minigraf is designed for three primary deployment targets: AI agents, mobile app
 
 **Support tiers.** The Rust crate and the Python binding are **Tier 1**: fully tested and released with every core release. Node.js, browser WASM, WASI, Java/JVM, Android, Swift and C are **Tier 2 (experimental)**: built and smoke-tested, released on a best-effort schedule. Tier 1 platforms are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers) and, before adopting, the [known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421).
 
+**Developer tooling ideas.** Minigraf also fits tools for software teams. [Developer Tooling Ideas](developer-tooling-ideas) describes several that could be built on it, with a fact schema and queries for each. None of them exist as official tools yet.
+
 ---
 
 ## AI Agents
