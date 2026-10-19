@@ -549,7 +549,7 @@ Negation uses stratified evaluation (Datalog^¬). The rule dependency graph is a
 - If a negative cycle is detected (e.g. rule A negates rule B and rule B negates rule A), `register_rule` returns an error and the rule is not added.
 - Non-recursive negation is always safe.
 <!-- @since v3.0.0 -->
-- A rule that calls a rule with `not`, `not-join`, `or` or `or-join` is evaluated in a later stratum than the rule it calls, so it sees all of that rule's rows. Before v3.0.0 the caller could run first and return too few rows (#628). Recursion through such a rule, where the called rule calls back, still returns too few rows (#633).
+- A rule that calls a rule with `not`, `not-join`, `or` or `or-join` is evaluated in a later stratum than the rule it calls, so it sees all of that rule's rows. Before v3.0.0 the caller could run first and return too few rows (#628). Recursion through such a rule, where the called rule calls back, is repeated until it derives nothing new; before v3.0.0 it stopped after one step and returned too few rows (#633).
 <!-- @end -->
 
 ```datalog
