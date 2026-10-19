@@ -135,6 +135,12 @@ changed fragment always has a new URL.
   unchanged, fetch the others, swap them in, update the sidebar and URL (`history.pushState`),
   and keep the reader's position. Changed fragments are briefly highlighted. A page that does not
   exist in the target version falls back to normal navigation.
+- **Page navigator:** the builder lists each page's `##` headings (with their `###` headings
+  nested) as "On this page". Screens 1280px wide or more show it as a column beside the page;
+  narrower screens show it as a collapsed box under the title. In the browser, `app.js` marks the
+  section being read and opens its `###` list. After a version switch, `assets/toc.js` rebuilds
+  the list from the page's headings. The builder and `toc.js` each build the list, so an
+  end-to-end test compares the two on every page of every version.
 - **Diff view:** for two versions, list pages added, removed and changed; within a changed page,
   show removed and added fragments with unchanged runs collapsed. The Datalog used is shown.
 - **Console:** run Datalog against `docs.graph`, with a version picker that fills in `:valid-at`.

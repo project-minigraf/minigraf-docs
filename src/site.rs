@@ -280,9 +280,15 @@ pub fn doc_page(
     html.push_str(&sidebar(ctx, nav, Some(&entry.slug)));
     html.push_str("<main id=\"content\" tabindex=\"-1\">\n");
     html.push_str(&banner(ctx, Some(&entry.slug)));
+    let entries: Vec<TocEntry> = frags
+        .iter()
+        .flat_map(|f| toc_entries(&blobs[&f.blob]))
+        .collect();
+    let list = toc_list(&entries);
     html.push_str(&format!(
-        "<article class=\"doc\"><h1 id=\"page-title\">{}</h1>\n<div id=\"frags\">\n",
-        inline_title(&entry.title)
+        "<article class=\"doc\"><h1 id=\"page-title\">{}</h1>\n{}<div id=\"frags\">\n",
+        inline_title(&entry.title),
+        toc_box(&list),
     ));
     for f in frags {
         html.push_str(&frag_html(f, &blobs[&f.blob]));
@@ -300,8 +306,141 @@ pub fn doc_page(
         tag = escape(&ctx.release.tag),
         slug = escape(&entry.slug),
     ));
-    html.push_str("</main>\n</div>\n</body>\n</html>\n");
+    html.push_str("</main>\n");
+    html.push_str(&toc_nav(&list));
+    html.push_str("</div>\n</body>\n</html>\n");
     html
+}
+
+/// A `##` or `###` heading, listed in the page navigator.
+#[derive(Debug, PartialEq)]
+pub struct TocEntry {
+    pub level: u8,
+    pub id: String,
+    /// The heading's HTML without its anchor link: text and `code` spans only.
+    pub html: String,
+}
+
+/// The `<h2 id>` and `<h3 id>` headings of rendered fragment HTML, in order.
+///
+/// `assets/toc.js` (`tocEntries`, `tocList`) builds the same list from the page after a version
+/// switch. Keep the two in step: the end-to-end test "the browser's page navigator matches the
+/// builder's on every page" compares them on every page of every version.
+pub fn toc_entries(html: &str) -> Vec<TocEntry> {
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(p) = rest.find("<h") {
+        rest = &rest[p + 2..];
+        let level = match rest.as_bytes().first() {
+            Some(b'2') => 2,
+            Some(b'3') => 3,
+            _ => continue,
+        };
+        let Some(after) = rest[1..].strip_prefix(" id=\"") else {
+            continue;
+        };
+        let Some(q) = after.find('"') else { break };
+        let id = &after[..q];
+        let Some(gt) = after[q..].find('>') else {
+            break;
+        };
+        let inner = &after[q + gt + 1..];
+        let Some(end) = inner.find(&format!("</h{level}>")) else {
+            break;
+        };
+        let text = &inner[..end];
+        let text = text
+            .find("<a class=\"anchor\"")
+            .map_or(text, |a| &text[..a]);
+        out.push(TocEntry {
+            level,
+            id: id.to_string(),
+            html: keep_code(text).trim().to_string(),
+        });
+        rest = &inner[end..];
+    }
+    out
+}
+
+/// Drops every tag except `<code>` and `</code>`. Text is already escaped.
+fn keep_code(html: &str) -> String {
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(lt) = rest.find('<') {
+        out.push_str(&rest[..lt]);
+        let Some(gt) = rest[lt..].find('>') else {
+            return out;
+        };
+        let tag = &rest[lt..lt + gt + 1];
+        if tag == "<code>" || tag == "</code>" {
+            out.push_str(tag);
+        }
+        rest = &rest[lt + gt + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The page navigator's list: `##` headings, each with its `###` headings in a nested list. The
+/// stylesheet shows a nested list only for the section being read, which `assets/app.js` marks.
+/// Empty when the page has fewer than two headings.
+pub fn toc_list(entries: &[TocEntry]) -> String {
+    if entries.len() < 2 {
+        return String::new();
+    }
+    let mut html = String::new();
+    let (mut item, mut sub) = (false, false);
+    for e in entries {
+        let link = format!("<a href=\"#{}\">{}</a>", e.id, e.html);
+        if e.level == 3 && item {
+            if !sub {
+                html.push_str("<ul>");
+                sub = true;
+            }
+            html.push_str(&format!("<li>{link}</li>"));
+            continue;
+        }
+        if sub {
+            html.push_str("</ul>");
+            sub = false;
+        }
+        if item {
+            html.push_str("</li>");
+        }
+        html.push_str(&format!("<li>{link}"));
+        item = true;
+    }
+    if sub {
+        html.push_str("</ul>");
+    }
+    if item {
+        html.push_str("</li>");
+    }
+    html
+}
+
+fn hidden_if_empty(list: &str) -> &'static str {
+    if list.is_empty() { " hidden" } else { "" }
+}
+
+/// The page navigator as a column beside the page, on wide screens.
+pub fn toc_nav(list: &str) -> String {
+    format!(
+        "<nav class=\"toc\" id=\"toc\" aria-labelledby=\"toc-title\"{}>\
+         <div class=\"toc-title\" id=\"toc-title\">On this page</div>\
+         <ul class=\"toc-list\">{list}</ul></nav>\n",
+        hidden_if_empty(list)
+    )
+}
+
+/// The page navigator as a collapsed box under the page title, on screens too narrow for the
+/// column.
+pub fn toc_box(list: &str) -> String {
+    format!(
+        "<details class=\"toc-box\" id=\"toc-box\"{}><summary>On this page</summary>\
+         <nav aria-label=\"On this page\"><ul class=\"toc-list\">{list}</ul></nav></details>\n",
+        hidden_if_empty(list)
+    )
 }
 
 pub fn frag_html(f: &FragAt, body: &str) -> String {
@@ -485,6 +624,56 @@ pub fn not_found(site: &Site) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toc_lists_h2_and_nested_h3() {
+        let html = concat!(
+            "<p>Intro</p><hr />",
+            "<h2 id=\"setup\">Setup<a class=\"anchor\" href=\"#setup\" aria-label=\"x\">#</a></h2>\n",
+            "<h3 id=\"as-of\"><code>:as-of</code> &amp; <a href=\"../x/\">more</a>",
+            "<a class=\"anchor\" href=\"#as-of\" aria-label=\"x\">#</a></h3>\n",
+            "<h4 id=\"deep\">Deep</h4><h2 id=\"next\">Next</h2>",
+        );
+        let entries = toc_entries(html);
+        assert_eq!(
+            entries,
+            vec![
+                TocEntry {
+                    level: 2,
+                    id: "setup".into(),
+                    html: "Setup".into()
+                },
+                TocEntry {
+                    level: 3,
+                    id: "as-of".into(),
+                    html: "<code>:as-of</code> &amp; more".into()
+                },
+                TocEntry {
+                    level: 2,
+                    id: "next".into(),
+                    html: "Next".into()
+                },
+            ]
+        );
+        assert_eq!(
+            toc_list(&entries),
+            "<li><a href=\"#setup\">Setup</a><ul><li><a href=\"#as-of\">\
+             <code>:as-of</code> &amp; more</a></li></ul></li>\
+             <li><a href=\"#next\">Next</a></li>"
+        );
+    }
+
+    #[test]
+    fn toc_hidden_with_one_heading() {
+        let list = toc_list(&toc_entries("<h2 id=\"only\">Only</h2>"));
+        assert_eq!(list, "");
+        assert!(toc_nav(&list).contains(" hidden>"));
+        assert!(toc_box(&list).contains(" hidden>"));
+        // A `###` before any `##` is listed at the top level.
+        let list = toc_list(&toc_entries("<h3 id=\"a\">A</h3><h2 id=\"b\">B</h2>"));
+        assert!(list.starts_with("<li><a href=\"#a\">A</a></li><li>"));
+        assert!(!toc_nav(&list).contains("hidden"));
+    }
 
     #[test]
     fn search_box_is_an_aria_combobox() {
