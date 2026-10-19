@@ -594,6 +594,254 @@ The ternary in `tierOf` is not listed: it ran inside another call, not in one of
 
 **Limits.** Diffing two runs reads two files, so it happens in the tool, not in one query. Tracing every decision has a cost, so it suits targeted tracing, tests and sampled production runs.
 
+## Actor state
+
+Give each actor its own Minigraf file. The actor is the only writer, so it matches Minigraf's single writer. Its state is a graph that other actors, tools and people can query, not a blob only the actor can read. This fits finite state machine (FSM) actors best: the states, the transitions and most of the rules that pick a transition can be facts and rules instead of code.
+
+**Questions it answers**
+
+- What state was this actor in when message M arrived?
+- Which message moved it from `pending` to `approved`, and which transition fired?
+- Which messages has it received but not acted on yet?
+- Which actors are in `on-hold` right now, before we change the logic for that state?
+
+**Why Minigraf fits.**
+
+- An actor handles one message at a time, and Minigraf allows one writer at a time. The actor never waits on the lock.
+- One actor per file matches Minigraf's one file per unit.
+- A supervisor restarts an actor that crashed. Minigraf replays its WAL when the file opens, so the restart needs no recovery code.
+- Other actors read the state with a shared handle. They send no message and do not wait in the mailbox.
+- "What did this actor know at time T?" is one `:as-of` query. Event-sourced actors answer it by replaying events into a new instance.
+- Messages arrive late. Valid time records when an event happened, and transaction time records when the actor learned it, so a late correction changes the past and keeps the old belief.
+
+**A central log as the source of truth.** For actors spread across machines, keep a durable log (for example Kafka, partitioned by actor id) as the source of truth. Each actor's file is then a local view that can be rebuilt from the log at any time. Minigraf needs no replication or merge for this. If the log holds raw facts, a rebuild copies facts and runs no actor code. A change to the actor's code cannot break a rebuild, which is a common pain with event-sourced actors.
+
+<!-- @since v3.0.0 -->
+The actor commits as usual, then reads its new records with the [fact log](database-tools#the-fact-log) and appends them to the central log. A transaction counts as done only once its records are in the log. To rebuild, [`LogWriter`](database-tools#building-a-database-from-records) builds a new file from those records and keeps each one's `tx_count`, `tx_id` and valid-time window, so the rebuilt file has the same history as the one it replaces.
+<!-- @end -->
+<!-- @until v3.0.0 -->
+On v2.x every commit takes its transaction time from the clock, so a rebuilt file has the right facts but new transaction times. Record the log offset or the event time as a fact if you need the original order.
+<!-- @end -->
+
+**What stays in code.** Datalog cannot send a message or call an API. A transition names its action (`"send-approval"`), and a small table in the host code maps each name to a function. The actor itself becomes a generic loop:
+
+1. Receive a message and transact it as facts.
+2. Query the transitions the message may fire.
+3. If none fires, keep the message. If one fires, transact a run that records it. If more than one fires, the rules need a priority.
+4. Run the named action.
+5. Offer kept messages again.
+
+The same loop serves every FSM actor. Only the graph differs.
+
+**Schema sketch.** States carry `:state/name`. A transition carries `:tr/from`, `:tr/on` (the message type), `:tr/to`, `:tr/guard` and `:tr/action`. Messages carry `:msg/actor`, `:msg/type` and `:msg/offset` (the log offset). Each step the actor takes is a run, with `:run/actor`, `:run/seq`, `:run/msg`, `:run/transition` and `:run/to`. Runs are only ever added, never changed, so the history needs no extra logging. The example is an insurance claim that waits for review and goes on hold while a dispute is open.
+
+```datalog
+;; Transaction 1: the FSM definition, shared by every claim actor
+(transact [[:st-pending :state/name "pending"]
+           [:st-on-hold :state/name "on-hold"]
+           [:st-approved :state/name "approved"]
+           [:g-always :guard/kind "always"]
+           [:g-no-dispute :guard/kind "no-open-dispute"]
+           [:t-hold :tr/from :st-pending]
+           [:t-hold :tr/on "dispute-opened"]
+           [:t-hold :tr/to :st-on-hold]
+           [:t-hold :tr/guard :g-always]
+           [:t-hold :tr/action "notify-team"]
+           [:t-resume :tr/from :st-on-hold]
+           [:t-resume :tr/on "dispute-closed"]
+           [:t-resume :tr/to :st-pending]
+           [:t-resume :tr/guard :g-no-dispute]
+           [:t-resume :tr/action "notify-team"]
+           [:t-approve :tr/from :st-pending]
+           [:t-approve :tr/on "review-passed"]
+           [:t-approve :tr/to :st-approved]
+           [:t-approve :tr/guard :g-no-dispute]
+           [:t-approve :tr/action "send-approval"]])
+
+;; Transaction 2: the actor starts, from log offset 100
+(transact [[:msg-0 :msg/actor :claim-17]
+           [:msg-0 :msg/type "created"]
+           [:msg-0 :msg/offset 100]
+           [:run-1 :run/actor :claim-17]
+           [:run-1 :run/seq 1]
+           [:run-1 :run/msg :msg-0]
+           [:run-1 :run/to :st-pending]])
+
+;; Current state: the target of the latest run
+(rule [(current ?a ?s)
+       [?r :run/actor ?a] [?r :run/seq ?n] [?r :run/to ?s]
+       (not-join [?a ?n]
+                 [?r2 :run/actor ?a] [?r2 :run/seq ?n2] [(> ?n2 ?n)])])
+
+;; A dispute is open until a message closes it
+(rule [(open-dispute ?a)
+       [?d :dispute/actor ?a]
+       (not-join [?d] [?d :dispute/closed-by ?m])])
+
+;; Guards, checked for the actor that got message ?m
+(rule [(guard-ok ?m ?t)
+       [?t :tr/guard ?g] [?g :guard/kind "always"]
+       [?m :msg/type _]])
+(rule [(guard-ok ?m ?t)
+       [?t :tr/guard ?g] [?g :guard/kind "no-open-dispute"]
+       [?m :msg/actor ?a]
+       (not-join [?a] (open-dispute ?a))])
+```
+
+A guard is a rule over everything the actor has seen, not a check of a few fields. The `no-open-dispute` guard is a negation over the claim's disputes. Now the claim gets messages:
+
+```datalog
+;; Transaction 3: a dispute opens
+(transact [[:msg-1 :msg/actor :claim-17]
+           [:msg-1 :msg/type "dispute-opened"]
+           [:msg-1 :msg/offset 101]
+           [:d-1 :dispute/actor :claim-17]])
+
+;; What may message 101 do?
+(query [:find ?to ?action
+        :where [?m :msg/offset 101]
+               [?m :msg/actor ?a] [?m :msg/type ?type]
+               (current ?a ?s)
+               [?t :tr/from ?s] [?t :tr/on ?type]
+               (guard-ok ?m ?t)
+               [?t :tr/to ?to-s] [?to-s :state/name ?to]
+               [?t :tr/action ?action]])
+;; => "on-hold" "notify-team"
+
+;; Transaction 4: the actor takes it, then runs "notify-team"
+(transact [[:run-2 :run/actor :claim-17]
+           [:run-2 :run/seq 2]
+           [:run-2 :run/msg :msg-1]
+           [:run-2 :run/transition :t-hold]
+           [:run-2 :run/to :st-on-hold]])
+
+;; Transaction 5: the review passes while the claim is on hold
+(transact [[:msg-2 :msg/actor :claim-17]
+           [:msg-2 :msg/type "review-passed"]
+           [:msg-2 :msg/offset 102]])
+
+;; What may message 102 do?
+(query [:find ?to ?action
+        :where [?m :msg/offset 102]
+               [?m :msg/actor ?a] [?m :msg/type ?type]
+               (current ?a ?s)
+               [?t :tr/from ?s] [?t :tr/on ?type]
+               (guard-ok ?m ?t)
+               [?t :tr/to ?to-s] [?to-s :state/name ?to]
+               [?t :tr/action ?action]])
+;; => no results: nothing fires, so the actor keeps the message
+
+;; Transaction 6: the dispute closes
+(transact [[:msg-3 :msg/actor :claim-17]
+           [:msg-3 :msg/type "dispute-closed"]
+           [:msg-3 :msg/offset 103]
+           [:d-1 :dispute/closed-by :msg-3]])
+
+;; Transaction 7: message 103 fires :t-resume
+(transact [[:run-3 :run/actor :claim-17]
+           [:run-3 :run/seq 3]
+           [:run-3 :run/msg :msg-3]
+           [:run-3 :run/transition :t-resume]
+           [:run-3 :run/to :st-pending]])
+
+;; Messages no run has used yet
+(query [:find ?type ?offset
+        :where [?m :msg/actor :claim-17]
+               [?m :msg/type ?type] [?m :msg/offset ?offset]
+               (not-join [?m] [?r :run/msg ?m])])
+;; => "review-passed" 102
+
+;; The actor offers kept messages again after each transition
+;; What may message 102 do?
+(query [:find ?to ?action
+        :where [?m :msg/offset 102]
+               [?m :msg/actor ?a] [?m :msg/type ?type]
+               (current ?a ?s)
+               [?t :tr/from ?s] [?t :tr/on ?type]
+               (guard-ok ?m ?t)
+               [?t :tr/to ?to-s] [?to-s :state/name ?to]
+               [?t :tr/action ?action]])
+;; => "approved" "send-approval"
+
+;; Transaction 8
+(transact [[:run-4 :run/actor :claim-17]
+           [:run-4 :run/seq 4]
+           [:run-4 :run/msg :msg-2]
+           [:run-4 :run/transition :t-approve]
+           [:run-4 :run/to :st-approved]])
+```
+
+The review arrived while the claim was on hold, so the actor kept it. The kept message is a fact, so it survives a restart. Once the dispute closed, the review fired.
+
+The history needs no extra logging:
+
+```datalog
+;; Which message moved the claim to approved?
+(query [:find ?type ?offset
+        :where [?r :run/actor :claim-17]
+               [?r :run/to ?s] [?s :state/name "approved"]
+               [?r :run/msg ?m]
+               [?m :msg/type ?type] [?m :msg/offset ?offset]])
+;; => "review-passed" 102
+
+;; In which transaction did message 102 arrive?
+(query [:find ?tx
+        :valid-at :any-valid-time
+        :where [?m :msg/offset 102] [?m :db/tx-count ?tx]])
+;; => 5
+
+;; What state was the claim in then?
+(query [:find ?name
+        :as-of 5
+        :where (current :claim-17 ?s) [?s :state/name ?name]])
+;; => "on-hold"
+
+;; Where to resume reading the log after a restart
+(query [:find (max ?o)
+        :where [?m :msg/actor :claim-17] [?m :msg/offset ?o]])
+;; => 103
+```
+
+An invariant is a query that should always return nothing. Run it after each transaction:
+
+```datalog
+;; Invariant: no claim is approved while a dispute is open
+(query [:find ?a
+        :where (current ?a ?s) [?s :state/name "approved"]
+               (open-dispute ?a)])
+;; => no results
+```
+
+**What a framework gains.** Event sourcing with snapshots already exists (Akka Persistence, Orleans, Proto.Actor). The gains here are elsewhere:
+
+- **State you can see.** Hidden state and hard debugging are the two most common complaints about actor systems. A query answers "what does this actor know?" without asking the actor.
+- **What-if checks.** Change a guard, then run it against past `:as-of` states to see which transitions would now go another way.
+- **Impact before a deploy.** Before you change the logic for a state, query which actors are in that state now.
+- **Code version as a fact.** Tag each run with the code version that made it. Then ask which decisions version 1.4 made.
+
+The meaning of old facts still needs care when the code changes, for example when a state is renamed or split in two. Fix that with correcting facts or with rules that map old names to new ones. Messages in flight still need a versioned format.
+
+**Link to decision telemetry.** The runs record decisions in the declarative part of the actor. [Decision telemetry](#decision-telemetry) covers the parts that stay as code: the actions, turning messages into facts, and hot paths. Tag both with the same message id to join them, and carry a causation id on each message to follow a decision across actors. Keep telemetry in a file of its own, not in the actor's state file or the central log: it describes what happened, it is not state.
+
+**Where to build it.**
+
+- Keep the core free of any actor runtime: "which transitions may this message fire?" and "commit this run with its log offset". Each runtime then needs only a thin adapter.
+- In Rust, Ractor or Kameo, on one node, is the quickest way to try the idea.
+- On the JVM, Apache Pekko has cluster sharding (one owner per actor), passivation, persistence with a pluggable journal, and an FSM style. Vert.x has no sharding, so that hard part would be yours to build.
+- For agents in Python, Ray's named actors give one owner per name.
+
+**Limits.**
+
+- Calls block, and by default every commit is `fsync`'d. On an async runtime, run them on a blocking thread. Never hold a `WriteTransaction` across an `.await`.
+- Committing every message is slow. Drain the mailbox into one transaction.
+- A query is slower than reading a field. Keep hot-path state in memory, and use the graph for history and rules.
+- Millions of short-lived actors means millions of files. Use in-memory databases for those, or skip the graph.
+- A question across many actors means asking each file. A global view belongs in a different store fed from the same log.
+- Log compaction keeps only the last value per key and destroys the history. The log needs full retention.
+- A rebuild must make the same entity ids. Derive them from the actor id and sequence number, never from a clock or a random source.
+- Rules are not stored in the file yet ([#241](https://github.com/project-minigraf/minigraf/issues/241)), so the actor registers them each time it opens the file.
+- When a guard fails, the query returns nothing and says nothing about why.
+
 ## Verification results
 
 Formal verifiers such as Verus, Creusot, Kani and Dafny prove properties of code for every input. Most of them keep nothing between runs, or keep only a cache keyed by a hash of each proof obligation. A key-value file does that job well. What gets thrown away is the history:
