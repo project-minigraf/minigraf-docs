@@ -416,6 +416,189 @@ Write architecture rules as Datalog, such as "the domain layer may not depend on
 
 Run the rule at each commit's valid time. The first commit with results introduced the violation, even though the import that broke the rule was in another module.
 
+## Codebase map
+
+Keep a small map of a codebase's components next to the code, and compare it with the real code at every commit. The main goal is to help people learn a new codebase. The hard part of a new codebase is often the mess of links between components, not any single file.
+
+Most teams have an architecture. It lives in someone's head or in an old wiki diagram. The code drifts away from it one shortcut at a time. Nothing fails when that happens, so nobody notices. A map that the build checks cannot drift without someone seeing it.
+
+Each component gets a short block in the repository:
+
+```
+component billing
+  purpose: Turns usage records into invoices
+  owns:    src/billing/**
+  parent:  payments
+  uses:    accounts
+  writes:  invoices
+```
+
+A scanner reads each commit and records the real links: imports, calls, tables read or written, events sent or received. The tool then compares the two graphs. This is the reflexion model idea from Murphy, Notkin and Sullivan (1995). It gives three lists:
+
+- **Expected and found.** The map and the code agree.
+- **Found but not expected.** The code has a link the map does not declare. This list is a map of the spaghetti.
+- **Expected but missing.** The map declares a link the code does not have. The map is out of date, or the work is not done.
+
+For a newcomer, this is a good way to learn. Guess the structure, write it down, and let the tool show where the guess is wrong.
+
+**Questions it answers**
+
+- What does this component do, and what does it talk to?
+- Which links exist in the code but not in the map?
+- Which declared links have no code behind them?
+- Which components share a table or an event, with no import between them?
+- Which parts of a large area talk to another area?
+- When did an undeclared link first appear?
+- Which parts of the map has no person checked yet?
+
+**How this differs from [architecture rules](developer-tooling-ideas#architecture-rules-over-history).** Rules say what must not happen, such as a forbidden path between layers. The map says what the team thinks the structure is, with purposes and ownership, and the tool compares all of it with the code. The two fit together: rules can run over the same facts.
+
+**Why Minigraf fits.**
+
+- The declared map and the extracted links are both facts in one store. The three lists are joins, and the two "not" lists use `not-join`.
+- Components nest. "Which top-level area holds this component?" is a recursive rule, and the same rule rolls deep links up to any level. A reader starts at the top and drills down.
+- Valid time is the commit where a link or a map entry became true, so you can see how the code and the map drifted apart.
+- Transaction time is when the tool or a person learned a fact. A runtime trace found this week can add a link that was true for months. A fix to the map keeps the old belief, so you can see what the team thought the structure was at any point.
+
+**Schema sketch.** A component carries `:component/name`, `:component/purpose`, an optional `:component/parent`, `:component/uses` refs to the components it may use, and `:component/source` (`"llm-draft"` or `"confirmed"`). A module (a file or package) carries `:module/path` and `:module/owner`, and the scanner adds `:imports` refs and the tables it reads or writes. Each fact is valid from the commit that added it. The three blocks in this section run in one session, in order.
+
+```datalog
+;; Transaction 1: the map
+(transact {:valid-from "2026-01-05"}
+          [[:c-payments :component/name "payments"]
+           [:c-payments :component/source "llm-draft"]
+           [:c-billing :component/name "billing"]
+           [:c-billing :component/purpose "Turns usage records into invoices"]
+           [:c-billing :component/parent :c-payments]
+           [:c-billing :component/uses :c-accounts]
+           [:c-billing :component/source "llm-draft"]
+           [:c-refunds :component/name "refunds"]
+           [:c-refunds :component/parent :c-payments]
+           [:c-refunds :component/uses :c-billing]
+           [:c-refunds :component/source "llm-draft"]
+           [:c-reports :component/name "reports"]
+           [:c-reports :component/uses :c-billing]
+           [:c-reports :component/source "llm-draft"]
+           [:c-accounts :component/name "accounts"]
+           [:c-accounts :component/source "llm-draft"]])
+
+;; Transaction 2: what the scanner found in the code
+(transact {:valid-from "2026-01-05"}
+          [[:m-invoice :module/path "src/billing/invoice.rs"]
+           [:m-invoice :module/owner :c-billing]
+           [:m-invoice :imports :m-lookup]
+           [:m-invoice :module/writes "invoices"]
+           [:m-lookup :module/path "src/accounts/lookup.rs"]
+           [:m-lookup :module/owner :c-accounts]
+           [:m-refund :module/path "src/refunds/refund.rs"]
+           [:m-refund :module/owner :c-refunds]
+           [:m-refund :imports :m-invoice]
+           [:m-monthly :module/path "src/reports/monthly.rs"]
+           [:m-monthly :module/owner :c-reports]
+           [:m-monthly :module/reads "invoices"]])
+
+;; Transaction 3: a commit on 2026-04-02 makes refunds call accounts directly
+(transact {:valid-from "2026-04-02"} [[:m-refund :imports :m-lookup]])
+
+;; Transactions 4 and 5: a person checks the billing entry
+(retract [[:c-billing :component/source "llm-draft"]])
+(transact {:valid-from "2026-01-05"} [[:c-billing :component/source "confirmed"]])
+
+;; A link between two components, found in the code
+(rule [(link ?a ?b) [?m :imports ?n]
+                    [?m :module/owner ?a]
+                    [?n :module/owner ?b]
+                    [(!= ?a ?b)]])
+
+;; Found but not expected, the day before and the day after
+(query [:find ?from ?to
+        :valid-at "2026-04-01"
+        :where (link ?a ?b)
+               (not-join [?a ?b] [?a :component/uses ?b])
+               [?a :component/name ?from]
+               [?b :component/name ?to]])
+;; => no results
+
+(query [:find ?from ?to
+        :valid-at "2026-04-03"
+        :where (link ?a ?b)
+               (not-join [?a ?b] [?a :component/uses ?b])
+               [?a :component/name ?from]
+               [?b :component/name ?to]])
+;; => "refunds" "accounts"
+
+;; Expected but missing
+(query [:find ?from ?to
+        :valid-at "2026-04-03"
+        :where [?a :component/uses ?b]
+               (not-join [?a ?b] (link ?a ?b))
+               [?a :component/name ?from]
+               [?b :component/name ?to]])
+;; => "reports" "billing"
+
+;; A hidden link: one component writes a table another reads, with no import either way
+(query [:find ?table ?writer ?reader
+        :valid-at "2026-04-03"
+        :where [?w :module/writes ?table]
+               [?r :module/reads ?table]
+               [?w :module/owner ?a]
+               [?r :module/owner ?b]
+               [(!= ?a ?b)]
+               (not-join [?a ?b] (link ?a ?b))
+               (not-join [?a ?b] (link ?b ?a))
+               [?a :component/name ?writer]
+               [?b :component/name ?reader]])
+;; => "invoices" "billing" "reports"
+```
+
+The two lists explain each other. The map says reports uses billing, but no import backs it up. The shared table shows why: reports reads the invoices table directly. That is a real link the import graph cannot see, and the place to look first.
+
+**Drilling down.** Roll links up to the top level to see how large areas talk to each other. Count the inner components behind each link to see how much of one area leans on another.
+
+```datalog
+;; The top-level area that holds a component (a component holds itself)
+(rule [(inside ?c ?top) [?c :component/name ?n] [?top :component/name ?n]])
+(rule [(inside ?c ?top) [?c :component/parent ?p] (inside ?p ?top)])
+
+(query [:find ?from ?to (count ?a)
+        :valid-at "2026-04-03"
+        :where (link ?a ?b)
+               (inside ?a ?x)
+               (inside ?b ?y)
+               [(!= ?x ?y)]
+               (not-join [?x] [?x :component/parent ?p])
+               (not-join [?y] [?y :component/parent ?q])
+               [?x :component/name ?from]
+               [?y :component/name ?to]])
+;; => "payments" "accounts" 2
+```
+
+On 2026-04-01 the same query returns 1: only billing talked to accounts. The shortcut in refunds doubled the payments area's reach into accounts.
+
+**Who checked the map.** An LLM can write the first map from an existing codebase. It is good at reading code, guessing boundaries and writing a one-line purpose for each box. A person then fixes the map, and a deterministic tool enforces it. The source fact shows which parts a person has checked.
+
+```datalog
+;; The map entries still unchecked, before and after the review
+(query [:find ?name
+        :as-of 3
+        :where [?c :component/source "llm-draft"]
+               [?c :component/name ?name]])
+;; => "payments", "billing", "refunds", "reports", "accounts"
+
+(query [:find ?name
+        :where [?c :component/source "llm-draft"]
+               [?c :component/name ?name]])
+;; => "payments", "refunds", "reports", "accounts"
+```
+
+**Hidden links.** Imports show only the easy links. The real tangle often hides in links a static scan cannot see: two components that use one table, events on a message bus, global state, dependency injection, and config files that switch behavior. Record tables and events as facts, as the example does. For the rest, runtime traces (for example OpenTelemetry spans) can add found links, with a later transaction time than the commit they apply to.
+
+**Precedents.** ArchUnit (Java), import-linter (Python) and dependency-cruiser (JavaScript) check architecture rules against one snapshot. Bazel visibility rules and Rust crate boundaries enforce some links at build time. C4 diagrams and Structurizr give a zoomable map, but nothing checks it against the code. Model Driven Architecture is a lesson in what to avoid: its models grew as large as the code and cost more to keep up than they saved.
+
+**Limits.** A static scan misses links made at run time, so the "expected but missing" list can hold false alarms. The map only helps while it stays small: a few dozen components, with one line of purpose each. Someone has to own it, and a failing build is what keeps that owner honest.
+
+**Later.** A checked map could grow into a spec that drives code generation. Each level would carry something a machine can check, such as ports, state machines, contracts and tests. An LLM would write the code at the bottom, and the checks would accept or reject it. That is a larger idea, and the map is useful without it.
+
 ## API and schema evolution
 
 Store each version of an API or database schema as a graph of types and fields, and record which clients use which fields. Then compare versions and see who a change affects.
