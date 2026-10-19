@@ -276,7 +276,7 @@ Record which code an AI agent wrote, under which task and model, and every human
 - Which bugs trace back to code written for a given task or by a given model?
 - Who last changed this function, and what did it look like before?
 
-**Why Minigraf fits.** Provenance is a history question, and a bi-temporal store never loses history. Links between code, tasks, commits and bug reports form a graph. Code units come from the [git sidecar](#git-sidecar); it pairs naturally with agent memory.
+**Why Minigraf fits.** Provenance is a history question, and a bi-temporal store never loses history. Links between code, tasks, commits and bug reports form a graph. Code units come from the [git sidecar](#git-sidecar); it pairs naturally with [decision telemetry](#decision-telemetry) and with agent memory.
 
 **Schema sketch.** A code unit carries `:unit/name`, `:unit/author`, `:unit/model` and `:unit/task`. Each edit is an entity with `:edit/unit` and `:edit/author`. Bugs carry `:bug/traced-to`.
 
@@ -361,6 +361,238 @@ Track a long refactor, such as moving every call site off an old API. A scanner 
                [(> ?from 1777593600000)]])   ;; 2026-05-01 in Unix ms
 ;; => "src/pay/payout.rs" 1782864000000
 ```
+
+## Architecture rules over history
+
+Write architecture rules as Datalog, such as "the domain layer may not depend on the web layer, directly or through any chain", and check them against the module graph of every commit. Tools such as ArchUnit check one snapshot. With history, you also see when a rule was first broken and how the graph drifted.
+
+**Questions it answers**
+
+- Which forbidden dependency paths exist right now?
+- At which commit did each violation first appear?
+- How has coupling between two areas grown over the last year?
+
+**Why Minigraf fits.** "Directly or through any chain" is reachability, which recursive rules handle well. Valid time per commit gives the history without storing a copy of the graph per commit.
+
+**Schema sketch.** A module carries `:module/name` and `:module/layer`; `:imports` links modules. Each import is valid from the commit that added it until the commit that removed it.
+
+```datalog
+(transact {:valid-from "2026-01-05"}
+          [[:m-web :module/name "web"]
+           [:m-web :module/layer "web"]
+           [:m-web :imports :m-domain]
+           [:m-domain :module/name "domain"]
+           [:m-domain :module/layer "domain"]
+           [:m-domain :imports :m-util]
+           [:m-util :module/name "util"]
+           [:m-util :module/layer "shared"]])
+
+;; A commit on 2026-04-02 makes a shared helper import the web layer.
+(transact {:valid-from "2026-04-02"} [[:m-util :imports :m-web]])
+
+(rule [(depends ?a ?b) [?a :imports ?b]])
+(rule [(depends ?a ?b) [?a :imports ?m] (depends ?m ?b)])
+
+;; Domain code that reaches the web layer, the day before
+(query [:find ?from ?to
+        :valid-at "2026-04-01"
+        :where [?a :module/layer "domain"]
+               (depends ?a ?b)
+               [?b :module/layer "web"]
+               [?a :module/name ?from]
+               [?b :module/name ?to]])
+;; => no results
+
+;; The same rule, the day after
+(query [:find ?from ?to
+        :valid-at "2026-04-03"
+        :where [?a :module/layer "domain"]
+               (depends ?a ?b)
+               [?b :module/layer "web"]
+               [?a :module/name ?from]
+               [?b :module/name ?to]])
+;; => "domain" "web"
+```
+
+Run the rule at each commit's valid time. The first commit with results introduced the violation, even though the import that broke the rule was in another module.
+
+## API and schema evolution
+
+Store each version of an API or database schema as a graph of types and fields, and record which clients use which fields. Then compare versions and see who a change affects.
+
+**Questions it answers**
+
+- Which fields were removed, and when?
+- Is this change breaking for any known client?
+- Which clients used a field when it was removed?
+
+**Why Minigraf fits.** Schemas are graphs: types refer to types, and nested references need recursion. Versions map to valid time, so any two versions can be compared without separate copies. Tools such as Buf already check compatibility for Protobuf, so the value here is the history and the client impact.
+
+**Schema sketch.** A field carries `:field/name` and `:field/of` (its type). A client carries `:client/name` and `:client/uses`. A removed field's window ends at the version that removed it.
+
+```datalog
+(transact {:valid-from "2026-01-01"}
+          [[:t-order :type/name "Order"]
+           [:f-total :field/name "total"]
+           [:f-total :field/of :t-order]])
+
+;; coupon_code exists from v1 (2026-01-01) until v2 (2026-04-01).
+(transact {:valid-from "2026-01-01" :valid-to "2026-04-01"}
+          [[:f-coupon :field/name "coupon_code"]
+           [:f-coupon :field/of :t-order]])
+
+(transact {:valid-from "2026-02-01"}
+          [[:client-ios :client/name "ios-app"]
+           [:client-ios :client/uses :f-coupon]
+           [:client-web :client/name "web-app"]
+           [:client-web :client/uses :f-total]])
+
+;; Removed fields, and the clients that used them
+(query [:find ?client ?field ?removed
+        :valid-at :any-valid-time
+        :where [?f :field/name ?field]
+               [?f :db/valid-to ?removed]
+               [(< ?removed 9223372036854775807)]   ;; skip open-ended fields
+               [?c :client/uses ?f]
+               [?c :client/name ?client]])
+;; => "ios-app" "coupon_code" 1775001600000   (2026-04-01)
+```
+
+## Incident timelines
+
+Store deploys, config changes, feature flags and alerts as facts, for incident response and postmortems. Logs often arrive late, and early reports often get corrected. The two time axes keep both stories:
+
+- **Valid time** is when something actually happened.
+- **Transaction time** is when the team learned about it.
+
+**Questions it answers**
+
+- What did the on-call engineer see at 14:02?
+- What was actually true at 14:02, now that the late data has arrived?
+- Which deploys, configs and flags were live for this service, or anything it depends on, when the error rate rose?
+
+These answers differ in most real incidents. Most tools keep only one of them.
+
+**Why Minigraf fits.** "Seen" and "true" are exactly the two time axes. Services, deploys and alerts link into a graph, so "what changed upstream of this service?" is a traversal. One file per incident is easy to attach to a postmortem.
+
+**Schema sketch.** A service carries `:service/name` and `:service/depends-on`. Deploys carry `:deploy/service` and `:deploy/version`; alerts carry `:alert/service` and `:alert/name`. Raw logs and metrics stay in their own stores; only events go in.
+
+```datalog
+;; Transaction 1: the service graph
+(transact {:valid-from "2026-01-01"}
+          [[:svc-api :service/name "api"]
+           [:svc-api :service/depends-on :svc-auth]
+           [:svc-auth :service/name "auth"]])
+
+;; Transaction 2: the auth deploy at 13:55, recorded on time
+(transact {:valid-from "2026-09-03T13:55:00Z"}
+          [[:dep-41 :deploy/service :svc-auth]
+           [:dep-41 :deploy/version "auth 2.8.1"]])
+
+;; Transaction 3: the alert at 14:02
+(transact {:valid-from "2026-09-03T14:02:00Z"}
+          [[:alert-7 :alert/service :svc-api]
+           [:alert-7 :alert/name "error rate above 5%"]])
+
+;; Transaction 4: the api deploy at 14:00, whose log arrived late
+(transact {:valid-from "2026-09-03T14:00:00Z"}
+          [[:dep-88 :deploy/service :svc-api]
+           [:dep-88 :deploy/version "api 4.12.0"]])
+
+;; A service, and everything it depends on
+(rule [(in-scope ?a ?b) [?a :service/name ?n] [?b :service/name ?n]])
+(rule [(in-scope ?a ?b) [?a :service/depends-on ?m] (in-scope ?m ?b)])
+
+;; What the on-call engineer could see when the alert fired
+(query [:find ?version
+        :as-of 3
+        :valid-at "2026-09-03T14:02:00Z"
+        :where [?api :service/name "api"]
+               (in-scope ?api ?s)
+               [?d :deploy/service ?s]
+               [?d :deploy/version ?version]])
+;; => "auth 2.8.1"
+
+;; What was actually live at 14:02
+(query [:find ?version
+        :valid-at "2026-09-03T14:02:00Z"
+        :where [?api :service/name "api"]
+               (in-scope ?api ?s)
+               [?d :deploy/service ?s]
+               [?d :deploy/version ?version]])
+;; => "auth 2.8.1", "api 4.12.0"
+```
+
+The on-call engineer suspected the auth deploy, because the api deploy was not visible yet. The postmortem can show both views side by side, which explains the decisions made during the incident.
+
+## Decision telemetry
+
+Record which way code went at each `if`, ternary and `switch`, and the values that drove each choice. Store each run in its own Minigraf file. Then compare two runs and find the first decision where they parted ways, and the input changes that came before it.
+
+This is aimed at code nobody on the team knows well, such as large amounts of AI-generated code. An engineer on call should be able to find the decision that went wrong without reading the code. A Java proof of concept exists, built as a compiler plugin.
+
+**The problem it solves.** The same checkout runs twice. The only difference is how fast a background loyalty lookup is. Nothing fails, but the totals differ: 12150 in one run, 13500 in the other. A diff of the two runs points to a cache lookup that found nothing in the slow run, so the customer lost a discount, and to the lookup's latency as the likely cause.
+
+**Why Minigraf fits.**
+
+- One file per run matches Minigraf's one file per unit. A run is easy to attach to a bug report.
+- Call paths, decisions and the values they read form a graph, so "why did this branch go this way?" is a traversal.
+- Rules make questions about a run queryable instead of hard-coded in a tool.
+- The code version is stored with each run, so you can ask how a decision behaved across releases.
+- Runs follow a language-neutral schema, so any language with Minigraf bindings can produce them.
+
+**Schema sketch.** A run holds nodes. A node is a frame (one call of a traced function, with its arguments) or a branch (one decision, with its condition text and outcome). Each node has `:node/id`, `:node/kind`, `:node/site` (a stable name for the place in the code) and a `:node/parent` ref. Branches add `:node/outcome`. Inputs are entities of their own, with a name and a rendered value. Node ids count up in the order nodes were recorded, so a lower id happened earlier.
+
+```datalog
+(transact [[:n-1 :node/id 1]
+           [:n-1 :node/kind "frame"]
+           [:n-1 :node/site "Checkout#handle(Order,int)"]
+           [:n-2 :node/id 2]
+           [:n-2 :node/kind "frame"]
+           [:n-2 :node/site "CustomerCache#tierOf(String)"]
+           [:n-2 :node/parent :n-1]
+           [:n-3 :node/id 3]
+           [:n-3 :node/kind "ternary"]
+           [:n-3 :node/site "CustomerCache#tierOf(String)/ternary#1"]
+           [:n-3 :node/outcome "false"]
+           [:n-3 :node/parent :n-2]
+           [:n-4 :node/id 4]
+           [:n-4 :node/kind "if"]
+           [:n-4 :node/site "Checkout#handle(Order,int)/if[gold]"]
+           [:n-4 :node/outcome "false"]
+           [:n-4 :node/parent :n-1]
+           [:n-5 :node/id 5]
+           [:n-5 :node/kind "frame"]
+           [:n-5 :node/site "Pricing#total(Order,long)"]
+           [:n-5 :node/parent :n-1]])
+
+(rule [(ancestor ?a ?d) [?d :node/parent ?a]])
+(rule [(ancestor ?a ?d) [?d :node/parent ?m] (ancestor ?a ?m)])
+(rule [(decision ?b) [?b :node/kind "if"]])
+(rule [(decision ?b) [?b :node/kind "ternary"]])
+(rule [(decision ?b) [?b :node/kind "switch"]])
+
+;; Decisions made by the callers of node 5, before node 5 ran
+(query [:find ?site ?out
+        :where [?t :node/id 5] (ancestor ?a ?t)
+               [?b :node/parent ?a] (decision ?b)
+               [?b :node/id ?bid] [(< ?bid 5)]
+               [?b :node/site ?site] [?b :node/outcome ?out]])
+;; => "Checkout#handle(Order,int)/if[gold]" "false"
+```
+
+The ternary in `tierOf` is not listed: it ran inside another call, not in one of node 5's callers.
+
+**Design points worth copying.**
+
+- Keep a run only when an exception escaped, the code reported an anomaly, or a sample rate picked it. Most healthy runs are dropped.
+- Never store a value marked as sensitive. Store a placeholder instead.
+- Carry the run across threads, so work on a thread pool joins the run that started it.
+- Cap the nodes per run, and record how many were dropped.
+- Compare two runs by site and position, never by node id: ids and timing differ between runs of the same code.
+- Store values as stable display strings. Identity hashes, addresses and timestamps fill a diff with noise.
+
+**Limits.** Diffing two runs reads two files, so it happens in the tool, not in one query. Tracing every decision has a cost, so it suits targeted tracing, tests and sampled production runs.
 
 ## Verification results
 
