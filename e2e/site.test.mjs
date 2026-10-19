@@ -4,7 +4,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -135,6 +135,137 @@ test("the server-rendered v3 page matches the in-place switch", async () => {
   const swapped = await live.page.locator("#frags > .frag").evaluateAll((els) => els.map((e) => e.dataset.blob));
   assert.deepEqual(swapped, ssr);
   await live.context.close();
+});
+
+// ── Page navigator ───────────────────────────────────────────────────────────
+
+const WIDE = { viewport: { width: 1440, height: 900 } };
+const tocLinks = (page) =>
+  page.locator("#toc .toc-list a").evaluateAll((as) => as.map((a) => [a.getAttribute("href"), a.textContent]));
+
+test("the page navigator lists the page's headings, without JavaScript too", async () => {
+  const { page, context } = await openPage("v2.0.4/datalog-reference/", {
+    ...WIDE,
+    javaScriptEnabled: false,
+  });
+  assert.ok(await page.locator("#toc").isVisible());
+  const h2 = await page.locator("#frags h2[id]").count();
+  assert.equal(await page.locator("#toc .toc-list > li").count(), h2);
+  const ids = await page.locator("#frags h2[id], #frags h3[id]").evaluateAll((hs) => hs.map((h) => "#" + h.id));
+  assert.deepEqual((await tocLinks(page)).map(([href]) => href), ids);
+  // Without JavaScript nothing is marked, so only the `##` headings show.
+  assert.equal(await page.locator("#toc ul ul").first().isVisible(), false);
+  await context.close();
+});
+
+test("the page navigator marks the section being read", async () => {
+  const { page, context, errors } = await openPage("latest/datalog-reference/", WIDE);
+  // A `##` section with `###` headings under it.
+  const parent = page.locator("#toc .toc-list > li:has(ul)").first();
+  await parent.locator(":scope > a").click();
+  await page.waitForFunction(() => document.querySelector("#toc a[aria-current]"));
+  assert.equal(
+    await page.locator("#toc a[aria-current]").textContent(),
+    await parent.locator(":scope > a").textContent(),
+  );
+  assert.ok(await parent.locator("ul").isVisible(), "its `###` headings show");
+
+  const sub = parent.locator("ul a").nth(1);
+  const subText = await sub.textContent();
+  await sub.click();
+  await page.waitForFunction((t) => document.querySelector("#toc a[aria-current]")?.textContent === t, subText);
+  assert.ok(await parent.locator("ul").isVisible());
+  assert.equal(await page.locator("#toc .toc-open").count(), 1);
+  // The box shares the marking, and stays out of the way on a wide screen.
+  assert.equal(await page.locator("#toc-box a[aria-current]").textContent(), subText);
+  assert.equal(await page.locator("#toc-box").isVisible(), false);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("the page navigator follows an in-place version switch", async () => {
+  const ssr = await openPage("v3.0.0/architecture/", { ...WIDE, javaScriptEnabled: false });
+  const want = await tocLinks(ssr.page);
+  await ssr.context.close();
+
+  const { page, context, errors } = await openPage("v2.0.4/architecture/", WIDE);
+  const before = await tocLinks(page);
+  await indexReady(page);
+  await page.locator("#version-picker summary").click();
+  await page.locator('#version-picker a[data-version="v3.0.0"]').click();
+  await page.waitForFunction(() => document.body.dataset.version === "v3.0.0");
+  const after = await tocLinks(page);
+  assert.notDeepEqual(after, before);
+  assert.deepEqual(after, want);
+  const box = await page.locator("#toc-box .toc-list a").evaluateAll((as) => as.map((a) => [a.getAttribute("href"), a.textContent]));
+  assert.deepEqual(box, want);
+  await page.locator("#toc .toc-list > li > a").last().click();
+  await page.waitForFunction(() => document.querySelector("#toc a[aria-current]"));
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("narrower screens get the page navigator as a collapsed box", async () => {
+  for (const width of [1100, 375]) {
+    const { page, context, errors } = await openPage("latest/datalog-reference/", {
+      viewport: { width, height: 800 },
+    });
+    assert.equal(await page.locator("#toc").isVisible(), false);
+    const box = page.locator("#toc-box");
+    assert.ok(await box.isVisible());
+    assert.equal(await box.locator(".toc-list").isVisible(), false, "collapsed at first");
+    await box.locator("summary").click();
+    const link = box.locator(".toc-list > li > a").nth(2);
+    const id = (await link.getAttribute("href")).slice(1);
+    await link.click();
+    await page.waitForFunction((id) => location.hash === "#" + id, id);
+    const top = await page.locator(`[id="${id}"]`).evaluate((h) => h.getBoundingClientRect().top);
+    assert.ok(top >= 0 && top < 200, `heading at ${top}px`);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    assert.ok(overflow <= 0, `scrolls sideways by ${overflow}px at ${width}px`);
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+});
+
+// The builder (src/site.rs) and the browser (assets/toc.js) each build the navigator. Check
+// that they agree on every page of every version, so the two copies cannot drift apart.
+test("the browser's page navigator matches the builder's on every page", async () => {
+  const paths = [];
+  for (const dir of await readdir(dist)) {
+    if (!/^v\d+\.\d+\.\d+$/.test(dir)) continue;
+    for (const slug of await readdir(join(dist, dir))) {
+      if ((await stat(join(dist, dir, slug))).isDirectory()) paths.push(`${dir}/${slug}/`);
+    }
+  }
+  assert.ok(paths.length > 100, `${paths.length} pages`);
+  const { page, context, errors } = await openPage("latest/home/");
+  const mismatches = await page.evaluate(
+    async ({ base, paths }) => {
+      const { tocEntries, tocList } = await import(`${base}assets/toc.js`);
+      // Compare as the browser parses both, so equivalent escapes compare equal.
+      const norm = (html) => {
+        const t = document.createElement("template");
+        t.innerHTML = html;
+        return t.innerHTML;
+      };
+      const out = [];
+      for (const p of paths) {
+        const doc = new DOMParser().parseFromString(await (await fetch(base + p)).text(), "text/html");
+        const built = tocList(tocEntries(doc.getElementById("frags")));
+        for (const id of ["toc", "toc-box"]) {
+          const el = doc.getElementById(id);
+          const server = el.querySelector(".toc-list").innerHTML;
+          if (norm(built) !== server || el.hidden !== !built) out.push(`${p} #${id}`);
+        }
+      }
+      return out;
+    },
+    { base: BASE, paths },
+  );
+  assert.deepEqual(mismatches, []);
+  assert.deepEqual(errors, []);
+  await context.close();
 });
 
 test("diff view lists what changed between v2.0.4 and v3.0.0", async () => {

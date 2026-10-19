@@ -13,6 +13,7 @@ import {
   escapeHtml,
   inlineTitle,
 } from "./docs.js";
+import { tocEntries, tocList } from "./toc.js";
 
 const body = document.body;
 const slug = body.dataset.page;
@@ -61,6 +62,86 @@ function renderSidebar(nav, tag) {
       return `<div class="nav-section"><h2>${escapeHtml(section)}</h2><ul>${items}</ul></div>`;
     })
     .join("");
+}
+
+// ── Page navigator ("On this page") ─────────────────────────────────────────
+// The builder renders it twice: a column beside the page (#toc) and a collapsed box under the
+// title (#toc-box) for narrower screens. After a version switch both are rebuilt from the
+// headings now on the page (assets/toc.js).
+
+const tocs = [document.getElementById("toc"), document.getElementById("toc-box")].filter(Boolean);
+const column = document.getElementById("toc");
+let tocTargets = [];
+let tocCurrent = null;
+
+function renderToc() {
+  const list = tocList(tocEntries(document.getElementById("frags")));
+  for (const t of tocs) {
+    t.querySelector(".toc-list").innerHTML = list;
+    t.hidden = !list;
+  }
+  bindToc();
+}
+
+function bindToc() {
+  const links = [...document.querySelectorAll('.toc-list a[href^="#"]')];
+  const byId = new Map();
+  for (const a of links) {
+    const id = decodeURIComponent(a.hash.slice(1));
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id).push(a);
+  }
+  tocTargets = [...byId]
+    .map(([id, as]) => ({ as, el: document.getElementById(id) }))
+    .filter((t) => t.el);
+  tocCurrent = null;
+  updateToc();
+}
+
+/** Marks the section being read: the last heading above the top of the reading area. */
+function updateToc() {
+  if (!tocTargets.length) return;
+  const line = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) + 8;
+  let cur = null;
+  for (const t of tocTargets) {
+    if (t.el.getBoundingClientRect().top > line) break;
+    cur = t;
+  }
+  // At the end of the page the last sections cannot reach the top. Prefer the heading the
+  // reader followed a link to, if it is on screen; else the last one.
+  const doc = document.documentElement;
+  if (innerHeight + scrollY >= doc.scrollHeight - 2) {
+    const hashed = tocTargets.find((t) => "#" + t.el.id === decodeURIComponent(location.hash));
+    const top = hashed?.el.getBoundingClientRect().top;
+    cur = hashed && top >= 0 && top < innerHeight ? hashed : tocTargets.at(-1);
+  }
+  if (cur === tocCurrent) return;
+  for (const a of tocCurrent?.as ?? []) a.removeAttribute("aria-current");
+  for (const li of document.querySelectorAll(".toc-open")) li.classList.remove("toc-open");
+  tocCurrent = cur;
+  if (!cur) return;
+  for (const a of cur.as) {
+    a.setAttribute("aria-current", "location");
+    a.closest(".toc-list > li")?.classList.add("toc-open");
+  }
+  // Keep the marked link in view when the column is taller than the window.
+  if (column?.offsetParent && column.scrollHeight > column.clientHeight) {
+    const r = cur.as.find((a) => column.contains(a)).getBoundingClientRect();
+    const c = column.getBoundingClientRect();
+    if (r.top < c.top + 32 || r.bottom > c.bottom - 32) {
+      column.scrollTop += r.top - c.top - c.height / 3;
+    }
+  }
+}
+
+let tocFrame = 0;
+function scheduleToc() {
+  if (!tocFrame) {
+    tocFrame = requestAnimationFrame(() => {
+      tocFrame = 0;
+      updateToc();
+    });
+  }
 }
 
 function renderBanner(tag, info) {
@@ -166,6 +247,7 @@ async function switchVersion(db, tag, { push = true } = {}) {
   }
 
   document.getElementById("page-title").innerHTML = inlineTitle(entry.title);
+  renderToc();
   renderSidebar(nav, tag);
   renderBanner(tag, info);
   updateChrome(tag, all, entry.title);
@@ -216,6 +298,11 @@ addEventListener("popstate", async () => {
   if (m[1] === body.dataset.version) return;
   if (!(await switchVersion(db, m[1], { push: false }))) location.reload();
 });
+
+addEventListener("scroll", scheduleToc, { passive: true });
+addEventListener("resize", scheduleToc);
+addEventListener("hashchange", scheduleToc);
+bindToc();
 
 history.replaceState({ tag: body.dataset.version }, "");
 preload();
