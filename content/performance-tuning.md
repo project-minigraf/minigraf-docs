@@ -60,7 +60,6 @@ let db = OpenOptions::new()
     .page_cache_size(1024)          // 1024 × 4KB = 4MB
     .wal_checkpoint_threshold(500)  // checkpoint every 500 WAL entries
     .max_derived_facts(50_000)      // recursive rule safety ceiling
-    .max_results(500_000)           // result set safety ceiling
     .synchronous(SyncMode::Normal)  // skip per-write fsync; checkpoint stays durable
     .path("my.graph")
     .open()?;
@@ -70,8 +69,8 @@ let db = OpenOptions::new()
 |---|---|---|
 | `page_cache_size` | 256 | pages (1 page = 4KB) |
 | `wal_checkpoint_threshold` | 1000 | WAL entries |
-| `max_derived_facts` | 1,000,000 | derived facts per rule iteration |
-| `max_results` | 1,000,000 | total query results |
+| `max_derived_facts` | 1,000,000 | derived facts per rule iteration; from v3.0.0, in total |
+| `max_results` | 1,000,000 | facts a rule query derives in total; a deprecated alias from v3.0.0 |
 | `synchronous` | `SyncMode::Full` | durability level (`Full` / `Normal`) |
 
 **`page_cache_size`** — File-backed databases only. The LRU cache holds recently read B+tree pages
@@ -95,16 +94,25 @@ open replays them. Call `db.checkpoint()` before closing to write them into the 
 <!-- @end -->
 
 **`max_derived_facts` / `max_results`** — Safety limits, not performance knobs. Lower them to fail
-fast on runaway recursive rules or unexpectedly large result sets; raise only if a legitimate query
-hits the ceiling. For one-off queries that need a different limit without reconfiguring the database,
-use `:max-derived-facts N` or `:max-results N` directly in the query vector — see the
+fast on runaway recursive rules; raise only if a legitimate query hits the ceiling. Neither limits
+the rows a query returns. For one-off queries that need a different limit without reconfiguring the
+database, use `:max-derived-facts N` or `:max-results N` directly in the query vector — see the
 [Datalog Reference](datalog-reference#max-derived-facts-and-max-results--per-query-complexity-limits).
+<!-- @until v3.0.0 -->
+`max_derived_facts` limits the facts derived in one rule iteration; `max_results` limits the facts
+a rule query derives in total.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+From v3.0.0 there is one limit (#553): `max_derived_facts` limits the facts a rule query derives in
+total, across iterations, and `max_results` is a deprecated alias of it. When both are set, the
+lower applies.
+<!-- @end -->
 <!-- @until v2.0.5 -->
 Before v2.0.5, `max_results` also counts the database's own live facts, so with 1,000,000 or more
 live facts every rule query fails with `INT-020` until the limit is raised (#528).
 <!-- @end -->
 <!-- @since v2.0.5 -->
-`max_results` counts only the facts the rules derive, not the database's own facts.
+The limit counts only the facts the rules derive, not the database's own facts.
 <!-- @end -->
 
 **`synchronous`** — Controls WAL write durability, independent of `checkpoint()` (which always
