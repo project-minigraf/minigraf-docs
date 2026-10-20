@@ -187,9 +187,20 @@ See [minigraf-android](https://github.com/project-minigraf/minigraf-android) for
 
 ##### 2 — Use in Kotlin
 
+<!-- @until v3.0.0 -->
 ```kotlin
 import uniffi.minigraf_ffi.MiniGrafDb
-import uniffi.minigraf_ffi.MiniGrafError
+import uniffi.minigraf_ffi.MiniGrafException
+```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```kotlin
+import io.github.project_minigraf.minigraf.MiniGrafDb
+import io.github.project_minigraf.minigraf.MiniGrafException
+```
+<!-- @end -->
+
+```kotlin
 import org.json.JSONObject
 
 // File-backed database (persists to the app's data directory)
@@ -236,16 +247,16 @@ db.checkpoint()
 
 ##### Error handling
 
-UniFFI generates a sealed class hierarchy extending `Exception`:
+UniFFI generates a sealed class hierarchy, `MiniGrafException`, extending `Exception`:
 
 ```kotlin
 try {
     db.execute("(bad datalog)")
-} catch (e: MiniGrafError.Parse) {
+} catch (e: MiniGrafException.Parse) {
     Log.e("Minigraf", "Parse error: ${e.msg}")
-} catch (e: MiniGrafError.Query) {
+} catch (e: MiniGrafException.Query) {
     Log.e("Minigraf", "Query error: ${e.msg}")
-} catch (e: MiniGrafError.Storage) {
+} catch (e: MiniGrafException.Storage) {
     Log.e("Minigraf", "Storage error: ${e.msg}")
 }
 ```
@@ -703,9 +714,18 @@ dependencies {
 ```
 <!-- @end -->
 
+<!-- @until v3.0.0 -->
 ```kotlin
 import uniffi.minigraf_ffi.MiniGrafDb
+```
+<!-- @end -->
+<!-- @since v3.0.0 -->
+```kotlin
+import io.github.project_minigraf.minigraf.MiniGrafDb
+```
+<!-- @end -->
 
+```kotlin
 val db = MiniGrafDb.open("/path/to/myapp.graph")
 db.execute("""(transact [[:alice :person/name "Alice"]])""")
 val result = db.execute("""(query [:find ?name :where [?e :person/name ?name]])""")
