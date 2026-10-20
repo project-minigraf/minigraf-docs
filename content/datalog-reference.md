@@ -11,6 +11,14 @@ The machine-checkable version of this grammar is `tests/grammar/grammar.pest`.
 
 ## Formal Grammar (EBNF)
 
+<!-- @since v3.0.0 -->
+The structural syntax accepted by the parser is on the [Grammar](grammar) page: EBNF
+generated from the grammar the parser is tested against, so it matches each release.
+Semantic constraints (safety checks, binding rules, compatibility rules) are documented
+separately in the [Semantic Constraints](#semantic-constraints) section below.
+
+<!-- @end -->
+<!-- @until v3.0.0 -->
 The following EBNF specifies the **structural** syntax accepted by the parser.
 Semantic constraints (safety checks, binding rules, compatibility rules) are documented
 separately in the [Semantic Constraints](#semantic-constraints) section below.
@@ -46,8 +54,8 @@ with-section           ::= ":with" variable+
 
 (* ── Find specs ───────────────────────────────────────────────────────── *)
 find-spec      ::= variable | aggregate-expr | window-expr
-aggregate-expr ::= "(" symbol variable ")"
-window-expr    ::= "(" symbol (variable ":over" | ":over") over-clause ")"
+aggregate-expr ::= "(" (op-sym | symbol) variable ")"
+window-expr    ::= "(" (op-sym | symbol) (variable ":over" | ":over") over-clause ")"
 over-clause    ::= "(" over-option* ")"
 over-option    ::= (":partition-by" | ":order-by") variable | ":desc" | ":asc"
 
@@ -68,7 +76,7 @@ and-branch      ::= "(" "and" where-clause+ ")"
 rule-invocation ::= "(" symbol edn-value* ")"
 
 (* ── Expressions ──────────────────────────────────────────────────────── *)
-expr        ::= "(" (unary-op | symbol) expr-arg ")"
+expr        ::= "(" (unary-op | op-sym | symbol) expr-arg ")"
               | "(" binary-op expr-arg expr-arg ")"
 unary-op    ::= "string?" | "integer?" | "float?" | "boolean?" | "nil?"
 binary-op   ::= "<" | ">" | "<=" | ">=" | "=" | "!=" | "+" | "-" | "*" | "/"
@@ -83,28 +91,33 @@ rule-head   ::= "(" symbol variable* ")"
 
 (* ── EDN values ───────────────────────────────────────────────────────── *)
 edn-value ::= uuid | boolean | nil | float | integer | string | bind-slot
-            | keyword | symbol | list | vector | map
+            | keyword | op-sym | variable | symbol | list | vector | map
 list      ::= "(" edn-value* ")"
 vector    ::= "[" edn-value* "]"
 map       ::= "{" (edn-value edn-value)* "}"
 
 (* ── Primitives ───────────────────────────────────────────────────────── *)
-keyword   ::= ":" (letter | digit | "/" | "-" | "_" | "?")+
-symbol    ::= (letter | "_") (letter | digit | "?" | "_" | "-" | "/")*
-            | "-" (letter | digit | "?" | "_" | "-" | "/")+
-variable  ::= "?" (letter | digit | "?" | "_" | "-" | "/")*
-boolean   ::= "true" | "false"
-nil       ::= "nil"
+keyword   ::= ":" word-char+
+op-sym    ::= "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/"
+symbol    ::= (letter | "_") word-char*    (* except boolean and nil *)
+            | "-" word-char+
+variable  ::= "?" word-char*
+boolean   ::= ("true" | "false")           (* not followed by a word-char *)
+nil       ::= "nil"                        (* not followed by a word-char *)
 integer   ::= "-"? digit+
 float     ::= "-"? digit+ "." digit*
 string    ::= '"' str-char* '"'
-str-char  ::= "\" ("n" | "t" | "r" | '"' | "\") | any-char-except-quote-backslash
+str-char  ::= "\" any-char                 (* \n \t \r \" \\ are escapes; before any other char, "\" is dropped *)
+            | any-char-except-quote-backslash
 uuid      ::= "#uuid" string
 bind-slot ::= "$" (letter | digit | "_" | "-")+
 
 (* letter = [a-zA-Z], digit = [0-9] *)
-(* Whitespace (space, tab, newline, comma) is ignored between tokens. *)
+(* word-char = letter | digit | "?" | "_" | "-" | "/" *)
+(* Whitespace (space, tab, newline, carriage return, comma) is ignored between tokens. *)
 ```
+
+<!-- @end -->
 
 ---
 
