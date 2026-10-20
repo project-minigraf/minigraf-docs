@@ -70,7 +70,7 @@ let db = OpenOptions::new()
 | `page_cache_size` | 256 | pages (1 page = 4KB) |
 | `wal_checkpoint_threshold` | 1000 | WAL entries |
 | `max_derived_facts` | 1,000,000 | derived facts per rule iteration; from v3.0.0, in total |
-| `max_results` | 1,000,000 | facts a rule query derives in total; a deprecated alias from v3.0.0 |
+| `max_results` | 1,000,000; from v3.0.0, `usize::MAX` | facts a rule query derives in total; a deprecated alias from v3.0.0 |
 | `synchronous` | `SyncMode::Full` | durability level (`Full` / `Normal`) |
 
 **`page_cache_size`** — File-backed databases only. The LRU cache holds recently read B+tree pages
@@ -104,8 +104,9 @@ a rule query derives in total.
 <!-- @end -->
 <!-- @since v3.0.0 -->
 From v3.0.0 there is one limit (#553): `max_derived_facts` limits the facts a rule query derives in
-total, across iterations, and `max_results` is a deprecated alias of it. When both are set, the
-lower applies.
+total, across iterations, and `max_results` is a deprecated alias of it: the lower of the two
+applies, and `max_results` has no limit of its own by default, so it can lower the limit but not
+raise it.
 <!-- @end -->
 <!-- @until v2.0.5 -->
 Before v2.0.5, `max_results` also counts the database's own live facts, so with 1,000,000 or more
