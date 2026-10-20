@@ -100,7 +100,7 @@ map       ::= "{" (edn-value edn-value)* "}"
 keyword   ::= ":" word-char+
 op-sym    ::= "<=" | ">=" | "!=" | "<" | ">" | "=" | "+" | "*" | "/"
 symbol    ::= (letter | "_") word-char*    (* except boolean and nil *)
-            | "-" word-char+
+            | "-" word-char+                 (* not followed by a numeral after "-" *)
 variable  ::= "?" word-char*
 boolean   ::= ("true" | "false")           (* not followed by a word-char *)
 nil       ::= "nil"                        (* not followed by a word-char *)
@@ -110,11 +110,13 @@ string    ::= '"' str-char* '"'
 str-char  ::= "\" any-char                 (* \n \t \r \" \\ are escapes; before any other char, "\" is dropped *)
             | any-char-except-quote-backslash
 uuid      ::= "#uuid" string
-bind-slot ::= "$" (letter | digit | "_" | "-")+
+bind-slot ::= "$" (letter | numeral | "_" | "-")+
 
-(* letter = [a-zA-Z], digit = [0-9] *)
-(* word-char = letter | digit | "?" | "_" | "-" | "/" *)
-(* Whitespace (space, tab, newline, carriage return, comma) is ignored between tokens. *)
+(* letter = a Unicode Alphabetic character, numeral = a character in Unicode's number
+   categories (Nd, Nl, No), digits included; digit = [0-9] *)
+(* word-char = letter | numeral | "?" | "_" | "-" | "/" *)
+(* Whitespace (space, tab, newline, carriage return, comma) and comments (";" to the
+   end of the line) are ignored between tokens. *)
 ```
 
 <!-- @end -->
