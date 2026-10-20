@@ -666,6 +666,20 @@ When the `:find` clause mixes plain variables and aggregates, the plain variable
 - `sum` / `sum-distinct`: Integer inputs → Integer result; any Float input → Float result (widening). Non-numeric, non-null values → runtime error.
 - `min` / `max`: Comparable types (Integer, Float, String). Mixing Integer and Float → runtime error. Non-comparable types (Boolean, Ref, Keyword) → runtime error.
 
+<!-- @since v3.0.0 -->
+### Exact, order-independent results
+
+An aggregate's answer does not depend on the order in which the query produces its rows:
+
+- `sum` / `sum-distinct` over integers add exactly and saturate to the `i64` range once, at the end: `i64::MAX + 1 + -1` is `i64::MAX`.
+- With any float, the sum is computed exactly and rounded once to the nearest float, so `1e16 + 1.0 + -1e16 + 1.0 + 0.5` is `2.5` in every order. A NaN, or both infinities, gives NaN; otherwise an infinity gives that infinity. The sum is `-0.0` only when every value is `-0.0`.
+- `min` / `max` of floats: `-0.0` is below `0.0`, and NaN is above every other number.
+- `count-distinct` / `sum-distinct` treat `0.0` and `-0.0` as one value, and all NaNs as one.
+- When several groups fail, the query reports the first failing aggregate (in `:find` order) of the first failing group (in output order).
+
+A [custom aggregate](#custom-aggregate-functions) receives its values in the order the query produces them, which can depend on the query plan.
+
+<!-- @end -->
 ---
 
 ## Window Functions
@@ -698,7 +712,26 @@ Window functions appear in the `:find` clause as `(func ?v :over (...))`. They a
 
 `lag` and `lead` are not supported in this version.
 
+<!-- @until v3.0.0 -->
 Frame semantics: all window functions use **unbounded-preceding** (accumulate from the first row in the partition up to and including the current row). Sliding frames (`:rows N preceding`) are deferred to a future release.
+
+Rows with equal `:order-by` values keep the order the query produced them in, so their `row-number` and running values can depend on the query plan. Keywords, refs and booleans do not sort: any two of them compare equal.
+
+<!-- @end -->
+<!-- @since v3.0.0 -->
+#### Order, ties and peers
+
+Each partition is sorted by its `:order-by` value under one order of all values: numbers by numeric value (an integer before an equal float, `-0.0` before `0.0`, NaN after every other number), then strings, booleans (`false` first), refs, keywords (by text) and `nil`. `:desc` reverses it.
+
+Rows with equal `:order-by` values are **peers**:
+
+- `rank` gives peers the same rank; the next rank skips.
+- `sum`, `count`, `min`, `max`, `avg` and custom window functions accumulate from the first row of the partition through the **last peer** of the current row, so peers get the same value (SQL's default frame). With `?s` of 1.5, 5, 10, 10, `(sum ?s :over (:order-by ?s))` gives 1.5, 6.5, 26.5, 26.5.
+- `row-number` gives each peer its own number, in the order of the other variables `:find` names; peers equal in all of them are identical rows, so which gets which number does not show in the answer.
+
+The answer is the same on every query plan. Sliding frames (`:rows N preceding`, [#183](https://github.com/project-minigraf/minigraf/issues/183)) and `lag` / `lead` ([#182](https://github.com/project-minigraf/minigraf/issues/182)) are planned for v3.1.0.
+
+<!-- @end -->
 
 ### Examples
 
@@ -729,10 +762,24 @@ Frame semantics: all window functions use **unbounded-preceding** (accumulate fr
 
 When a `:find` clause contains both plain aggregates (e.g. `(count ?e)`) and window functions (e.g. `(rank :over (...))`), aggregation runs first — collapsing rows into one per group — and then window functions annotate the collapsed rows.
 
+<!-- @since v3.0.0 -->
+A window in such a query reads the grouped rows, which hold only the plain `:find` variables, so its argument, `:partition-by` and `:order-by` must be plain `:find` variables; anything else fails to parse with `PRS-082`. `:with` variables do not group when `:find` holds a window.
+
+<!-- @end -->
+<!-- @until v3.0.0 -->
+A window variable that is not a plain `:find` variable reads `nil` on every grouped row.
+
+<!-- @end -->
+
 ### Type rules
 
-- `sum` / `avg`: Integer inputs → Integer/Float result; any Float input → Float result. Non-numeric, non-null → runtime error.
-- `min` / `max`: Comparable types (Integer, Float, String). Mixing Integer and Float → runtime error.
+- `sum`: Integer while every number so far is an integer, otherwise Float. `avg`: Float. Both skip values that are not numbers.
+<!-- @until v3.0.0 -->
+- `min` / `max`: compare Integer, Float and String values; of two values they cannot compare, the first seen is kept.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+- `min` / `max`: any values, by the order above.
+<!-- @end -->
 - `rank` / `row-number`: always return `Integer`.
 - `count`: always returns `Integer`, counts non-null rows only.
 
