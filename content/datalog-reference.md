@@ -723,11 +723,11 @@ Rows with equal `:order-by` values keep the order the query produced them in, so
 
 Each partition is sorted by its `:order-by` value under one order of all values: numbers by numeric value (an integer before an equal float, `-0.0` before `0.0`, NaN after every other number), then strings, booleans (`false` first), refs, keywords (by text) and `nil`. `:desc` reverses it.
 
-Rows with equal `:order-by` values are **peers**, and every window function treats them alike:
+Rows with equal `:order-by` values are **peers**:
 
 - `rank` gives peers the same rank; the next rank skips.
 - `sum`, `count`, `min`, `max`, `avg` and custom window functions accumulate from the first row of the partition through the **last peer** of the current row, so peers get the same value (SQL's default frame). With `?s` of 1.5, 5, 10, 10, `(sum ?s :over (:order-by ?s))` gives 1.5, 6.5, 26.5, 26.5.
-- `row-number` numbers peers in the order of the other variables `:find` names.
+- `row-number` gives each peer its own number, in the order of the other variables `:find` names; peers equal in all of them are identical rows, so which gets which number does not show in the answer.
 
 The answer is the same on every query plan. Sliding frames (`:rows N preceding`, [#183](https://github.com/project-minigraf/minigraf/issues/183)) and `lag` / `lead` ([#182](https://github.com/project-minigraf/minigraf/issues/182)) are planned for v3.1.0.
 
