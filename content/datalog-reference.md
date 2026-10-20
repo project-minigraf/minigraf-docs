@@ -675,6 +675,7 @@ An aggregate's answer does not depend on the order in which the query produces i
 - With any float, the sum is computed exactly and rounded once to the nearest float, so `1e16 + 1.0 + -1e16 + 1.0 + 0.5` is `2.5` in every order. A NaN, or both infinities, gives NaN; otherwise an infinity gives that infinity. The sum is `-0.0` only when every value is `-0.0`.
 - `min` / `max` of floats: `-0.0` is below `0.0`, and NaN is above every other number.
 - `count-distinct` / `sum-distinct` treat `0.0` and `-0.0` as one value, and all NaNs as one.
+- A grouping variable likewise puts `0.0` and `-0.0` in one group, and all NaNs in one; the group returns the least of its values in that order, so `-0.0` when the group holds it.
 - When several groups fail, the query reports the first failing aggregate (in `:find` order) of the first failing group (in output order).
 
 A [custom aggregate](#custom-aggregate-functions) receives its values in the order the query produces them, which can depend on the query plan.
