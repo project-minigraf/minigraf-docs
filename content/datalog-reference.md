@@ -456,26 +456,41 @@ Override the database-level `OpenOptions` complexity limits for a single query:
 ;; Run a transitive-closure query that would normally hit the 1M default
 (query [:find ?ancestor
         :where (ancestor ?ancestor "abc123")
-        :max-derived-facts 5000000
-        :max-results 10000])
+        :max-derived-facts 5000000])
 ```
 
-Both keys are optional and order-independent. Omitting a key falls back to the `OpenOptions`
-value for that limit. Values must be positive integers (≥ 1).
+Both keys are optional and order-independent. Values must be positive integers (≥ 1).
+<!-- @until v3.0.0 -->
+Omitting a key falls back to the `OpenOptions` value for that limit.
 
 - `:max-derived-facts N` — caps how many facts the recursive rule engine can derive
   internally before returning an error. Use when a legitimate recursive query exceeds
   the database default.
+<!-- @end -->
 <!-- @until v2.0.5 -->
 - `:max-results N` — caps the facts the rule evaluator holds, **counting the database's
   own live facts**, so on a database with `N` or more live facts every rule query fails
   with `INT-020` (#528). Raise it above the live facts plus the derived ones. Queries
   without rules are not limited by this value.
 <!-- @end -->
-<!-- @since v2.0.5 -->
+<!-- @range v2.0.5..v3.0.0 -->
 - `:max-results N` — caps how many facts the rules of a query may derive in total;
   the database's own facts do not count. Queries without rules are not limited by
   this value, and results are never truncated: the query fails with `INT-020`.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+There is one limit (#553):
+
+- `:max-derived-facts N` — caps how many facts the rules of a query may derive in
+  total, across iterations; the database's own facts do not count. A query that
+  derives more fails with `INT-020`. Queries without rules are not limited by it,
+  and results are never truncated.
+- `:max-results N` — deprecated alias of `:max-derived-facts`. When both are given,
+  the lower applies.
+
+Either key replaces the `OpenOptions` limit for that query; with neither, the
+`OpenOptions` limit applies. Before v3.0.0, `:max-derived-facts` capped the facts
+derived in one iteration and `:max-results` the total.
 <!-- @end -->
 
 The limits are applied for that query only and do not affect subsequent queries.
