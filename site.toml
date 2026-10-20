@@ -71,6 +71,14 @@ path = "docs/DURABILITY.md"
 since = "v3.0.0"
 
 [[snapshot]]
+slug = "grammar"
+title = "Grammar"
+section = "Reference"
+order = 15
+path = "docs/GRAMMAR.md"
+since = "v3.0.0"
+
+[[snapshot]]
 slug = "error-reference"
 title = "Error Reference"
 section = "Reference"
