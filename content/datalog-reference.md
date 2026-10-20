@@ -358,6 +358,18 @@ Retraction records a new fact with `asserted = false`. The original fact remains
         :where [:alice :person/age ?age]])
 ```
 
+<!-- @since v3.0.0 -->
+### The query vector
+
+A query vector is a run of sections, each a keyword and what follows it: `:find` and its
+specs, `:where` and its clauses, `:with` and its variables, and the options `:as-of`,
+`:valid-at`, `:any-valid-time`, `:max-derived-facts` and `:max-results` with their
+arguments. Sections come in any order. A section with nothing in it fails with `PRS-112`,
+a keyword the query does not know (such as `:limit`) with `PRS-113`, and a value after an
+option's argument with `PRS-061`: write `[:find ?a ?b :any-valid-time :where …]`, not
+`[:find ?a :any-valid-time ?b :where …]`.
+
+<!-- @end -->
 ### Variables
 
 Variables start with `?`. They are unified across clauses — the same variable in two clauses constrains them to the same value.
@@ -909,6 +921,13 @@ A filter clause keeps the current binding if the expression evaluates to a truth
 [(matches? ?email "^[^@]+@[^@]+$")]   ;; regex validated at parse time
 ```
 
+<!-- @since v3.0.0 -->
+A filter is a list inside a vector. A bare list in `:where` is a rule call, and a rule's
+name is a symbol that is neither a variable nor an operator, so `(< ?age 30)` without
+the vector fails with `PRS-097`.
+
+<!-- @end -->
+
 ### Arithmetic bindings
 
 An arithmetic binding evaluates the expression and binds the result to an output variable.
@@ -1000,6 +1019,14 @@ Rules define named relations that can be used in queries. They support recursion
 ```
 
 A rule invocation takes one or two arguments, for example `(tagged ?e)` or `(reachable ?a ?b)`. An invocation with more arguments fails at query time with `INT-028`.
+
+<!-- @since v3.0.0 -->
+A rule head is the rule's name followed by variables. A name that is a variable or an
+operator fails with `PRS-105`, and a head argument that is not a variable, such as
+`(rule [(r ?a :c) …])`, with `PRS-114`; bind the variable in the body instead,
+`(rule [(r ?a ?x) [?a :edge ?x] [(= ?x :c)]])`.
+
+<!-- @end -->
 
 Rules use semi-naive fixed-point evaluation. Cycles in the graph are handled correctly — the evaluator converges on the fixed point without infinite loops.
 
