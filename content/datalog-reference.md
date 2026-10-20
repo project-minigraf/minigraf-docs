@@ -412,6 +412,7 @@ The keyword-or-ref rule applies to the top-level `:where` of a query; `or` branc
 - **Inside `not` / `or`.** A pseudo-attribute reads the outer fact: `[?e :person/name ?n] (not [?e :db/tx-count 1])` excludes the entities whose `:person/name` fact is from transaction 1.
 - **No source** is a parse-time error, `PRS-081`. To read every fact of an entity, put `[?e ?a _]` before the pseudo-attribute pattern: one row per fact.
 - The value position binds the metadata, or checks it when it is a constant or a variable bound elsewhere.
+- **Derived facts.** A fact a rule derives has no metadata: when the source matched one, the pseudo-attribute binds `nil` (the row is kept) and a constant never matches it. `(reach ?x ?y) [?x :reach ?y] [?x :db/tx-count ?t]` gives `nil` for derived `:reach` facts and the tx-count of a stored one. Inside a rule body the source is a stored fact or a fact derived by another rule, read the same way.
 
 `:db/valid-at` binds the query's valid time (`nil` under `:any-valid-time`), once per visible fact of the entity; it needs no source.
 <!-- @end -->
@@ -1042,6 +1043,13 @@ A rule head is the rule's name followed by variables. A name that is a variable 
 operator fails with `PRS-105`, and a head argument that is not a variable, such as
 `(rule [(r ?a :c) …])`, with `PRS-114`; bind the variable in the body instead,
 `(rule [(r ?a ?x) [?a :edge ?x] [(= ?x :c)]])`.
+
+The head's first argument is the entity of the fact the rule derives: it must bind a ref
+or a keyword (which names an entity), or the query fails with `QRY-013`; the second
+argument may bind any value. A head variable the body does not bind fails with `INT-022`.
+Both hold for rules with `not`, `not-join`, `or` or `or-join` too, which before v3.0.0
+dropped such rows silently. An `or` branch in a rule body can use predicates registered
+with `register_predicate`, as the rest of the body can.
 
 <!-- @end -->
 
