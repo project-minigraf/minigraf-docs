@@ -116,6 +116,25 @@ live facts every rule query fails with `INT-020` until the limit is raised (#528
 The limit counts only the facts the rules derive, not the database's own facts.
 <!-- @end -->
 
+<!-- @since v3.0.0 -->
+**`query_memory_limit`** — The most bytes one query may hold, default `usize::MAX` (no limit). A
+query that would hold more fails with `QRY-012` and frees what it held; the database and other
+queries carry on, and a cursor keeps the rows it already returned. What counts is the state
+operators keep: a hash join's table, a negation's or an `or`'s table, a distinct set, an aggregate's
+groups, a window's rows, the facts a rule query derives, and the query's entity and ident ids, each
+by a per-entry estimate that is the same on every platform. Rows passing between operators are not
+counted, and neither is the answer `execute` collects: read a large answer through `query`. A query
+inside a write transaction that has staged writes is not counted. Set it on a device where one
+query must not take the memory the app needs:
+
+```rust
+let db = OpenOptions::new()
+    .query_memory_limit(64 * 1024 * 1024) // 64 MiB per query
+    .path("my.graph")
+    .open()?;
+```
+<!-- @end -->
+
 **`synchronous`** — Controls WAL write durability, independent of `checkpoint()` (which always
 fsyncs the main file regardless of this setting). `SyncMode::Full` (default) fsyncs after every
 WAL write — every `transact`/`retract` is durable immediately, at the cost of a disk round-trip
