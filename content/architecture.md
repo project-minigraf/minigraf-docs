@@ -344,6 +344,16 @@ WAL file layout:
 On open, the WAL is replayed only on top of the generation it was written against. A version 1 WAL from v2.x next to a file migrated from v7 is still replayed.
 
 A WAL created after a later checkpoint than the file holds, as when a backup of the `.graph` is restored and the current WAL is left in place, fails at open with `STG-047`, read-write and read-only, and both files are left unmodified. Replaying it would apply the later transactions and silently miss the ones between the two checkpoints. A WAL with an older base generation, left by a crash between a checkpoint's commit and its WAL delete, replays as before.
+
+**Large transactions.** `transact` and `retract` are read one fact at a time, so a statement's size never multiplies in memory while it is parsed. A transaction becomes *large* on a file database when its facts would pass one chunk (16,384 facts): a larger statement passed to `execute`, or the `WriteTransaction` statement that takes its staged facts past it. From then on it holds at most one chunk of facts in memory:
+
+- The WAL file is created, header only, before the transaction writes its first page; the transaction never writes a WAL entry.
+- Its facts go, a chunk at a time, into copy-on-write trees that start as the committed generation's, together with the uncheckpointed facts of earlier transactions. Readers keep reading the committed generation.
+- In a `WriteTransaction` each statement has a base: a rejected statement returns the trees to it, and the transaction stays usable. A later statement that writes a fact an earlier statement wrote replaces it (the last statement decides each fact, as in a small transaction).
+- Commit is a checkpoint: the next meta page is the commit point, then the WAL is deleted. The transaction's `tx_id` is the time it became large.
+- A crash before the commit point leaves the database as it was: the WAL says which generation to open, even on a new file. A rollback leaves the file as it was too; the next checkpoint, like the first one after a WAL is found at open, writes a meta page before it deletes the WAL.
+
+Queries inside a `WriteTransaction` read the committed indexes and uncheckpointed facts with the transaction's staged facts, or, once it is large, its working trees; they do not copy the database.
 <!-- @end -->
 
 CRC32-protected entries ensure partial writes (from crashes) are safely discarded. Every WAL write is followed by a flush to disk, controlled by `OpenOptions::synchronous` (see [Performance Tuning](performance-tuning#configuration-knobs)):
@@ -392,7 +402,7 @@ A checkpoint that fails after it may have written (a failed write, a full disk, 
 <!-- @since v3.0.0 -->
 ### Streaming engine
 
-Queries whose `:where` holds patterns, expression clauses, `not` / `not-join`, `or` / `or-join` and rule invocations, and whose `:find` holds plain variables, aggregates or window functions, run on a streaming engine (`query/engine/`) instead of the executor above. Every other query (a nested `or`, a rule whose body has no pattern, an `:as-of` timestamp), and reads inside a `WriteTransaction`, still take the executor; later 3.x releases move them over without API changes.
+Queries whose `:where` holds patterns, expression clauses, `not` / `not-join`, `or` / `or-join` and rule invocations, and whose `:find` holds plain variables, aggregates or window functions, run on a streaming engine (`query/engine/`) instead of the executor above. Every other query (a nested `or`, a rule whose body has no pattern, an `:as-of` timestamp) still takes the executor; later 3.x releases move them over without API changes. Queries inside a `WriteTransaction` run on the engine too.
 
 - **Plan.** Clauses run in the executor's order. The first pattern's constant and bound positions choose the index range: EAVT for a known entity, AVET for an attribute and value (`[?e :person/name "Alice"]` reads only the entries for `"Alice"`), AEVT for an attribute alone.
 - **Joins.** Each later pattern is an `IndexNestedLoopJoin` when its entity is a variable already bound (one entity's range per row, committed and uncheckpointed), or a `HashJoin` otherwise (a join on the value or attribute position, or a cross product), whose table holds the side with the smaller estimate; for a cross product the outer side's estimate is the product of its patterns', so a chain of patterns that share no variable keeps each small inner pattern in the table, not the growing outer side. Join keys follow the [join rules](datalog-reference#join-rules).
