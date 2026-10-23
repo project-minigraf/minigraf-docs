@@ -37,7 +37,7 @@ Minigraf's bindings are split into [support tiers](https://github.com/project-mi
 | **Prepared Statements** | ✅ `$slot` temporal bind tokens (v0.18.0) | ⚠️ Limited | ❌ No | ✅ Yes | ✅ Yes |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
 | **WASM Ready** | ✅ Yes (browser, WASI) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
-| **Platform support** | Tier 1: Rust, Python. Tier 2 (experimental): WASM, WASI, Android, iOS, Node.js, Java, C | JVM only | Native, WASM (limited) | JVM only | Native, WASM |
+| **Platform support** | Tier 1: Rust, Python, browser WASM. Tier 2 (experimental): WASI, Android, iOS, Node.js, Java, C | JVM only | Native, WASM (limited) | JVM only | Native, WASM |
 | **Maturity** | Young (v1.0 in 2026); v3.0.0 brings file format v8 and data-integrity fixes | Mature | Pre-1.0 | Mature | Decades of production use |
 
 Minigraf's bindings are split into [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).

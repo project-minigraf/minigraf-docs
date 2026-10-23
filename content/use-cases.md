@@ -6,7 +6,12 @@ order: 40
 ---
 Minigraf is designed for three primary deployment targets: AI agents, mobile apps, and WASM/browser. All three benefit from the same core properties — single-file, embedded, zero-configuration, bi-temporal.
 
+<!-- @until v3.0.0 -->
 **Support tiers.** The Rust crate and the Python binding are **Tier 1**: fully tested and released with every core release. Node.js, browser WASM, WASI, Java/JVM, Android, Swift and C are **Tier 2 (experimental)**: built and smoke-tested, released on a best-effort schedule. Tier 1 platforms are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers) and, before adopting, the [known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+**Support tiers.** The Rust crate, the Python binding and browser WASM are **Tier 1**: fully tested and released with every core release. Node.js, WASI, Java/JVM, Android, Swift and C are **Tier 2 (experimental)**: built and smoke-tested, released on a best-effort schedule. Tier 1 platforms are Linux (ext4, xfs), macOS (APFS) and Windows (NTFS) on local disk. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers) and, before adopting, the [known issues in the current release](https://github.com/project-minigraf/minigraf/issues/421).
+<!-- @end -->
 
 **Developer tooling ideas.** Minigraf also fits tools for software teams. [Developer Tooling Ideas](developer-tooling-ideas) describes several that could be built on it, with a fact schema and queries for each. None of them exist as official tools yet.
 
@@ -432,7 +437,12 @@ Browser apps built on a local-first architecture face the same eventual-consiste
 
 ### Integration (Phase 8)
 
+<!-- @until v3.0.0 -->
 > **Support tier 2 (experimental).** Built and smoke-tested, released on a best-effort schedule, possibly after the core release. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+> **Support tier 1.** Fully tested and released at the same time as every core release. The IndexedDB backend is Tier 1; the OPFS backend (v3.1.0) starts at Tier 2 until it has shipped. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
+<!-- @end -->
 
 Two distinct WASM targets:
 
