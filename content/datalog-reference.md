@@ -576,9 +576,9 @@ Exclude outer bindings when there *exists* some assignment to inner-only variabl
 <!-- @since v3.0.0 -->
 ### Comparing with the outer row
 
-A body takes from the outer row every variable it names (`not`) or its join variables (`not-join`), and compares them with the facts it matches as joins compare them (see [Join rules](#join-rules)): floats by IEEE `==`, so `0.0` equals `-0.0` and NaN equals nothing, and a keyword equals a ref to the entity it names. This holds whatever the body holds (patterns, expressions, rule calls) and wherever it appears (a query, an `or` branch, a rule body). A float *constant* written in the body still matches within `f64::EPSILON`. A `:db/valid-at` pattern in a body binds the query's valid time, as it does outside.
+A body takes from the outer row every variable it names (`not`) or its join variables (`not-join`), and compares them with the facts it matches as joins compare them (see [Join rules](#join-rules)): floats by IEEE `==`, so `0.0` equals `-0.0` and NaN equals nothing, and a keyword equals a ref to the entity it names. This holds whatever the body holds (patterns, expressions, rule calls) and wherever it appears (a query, an `or` branch, a rule body). A float *constant* written in the body matches equal floats only ([#706](https://github.com/project-minigraf/minigraf/issues/706)). A `:db/valid-at` pattern in a body binds the query's valid time, as it does outside.
 
-An expression that fails on a body row (a type mismatch, a division by zero, an unknown predicate) drops that row, so it cannot exclude the outer row.
+An expression that fails on a body row (a type mismatch, a division by zero) drops that row, so it cannot exclude the outer row. An unknown predicate in a body fails the query with `QRY-007` when it opens. Before v3.0.0 it failed on every body row, so the `not` kept every outer row ([#551](https://github.com/project-minigraf/minigraf/issues/551)).
 <!-- @end -->
 <!-- @until v3.0.0 -->
 A body whose only clauses are patterns compares the outer row's values as joins do. A body with an expression, a body in an `or` branch or rule, or one in a query that calls a rule, substitutes each outer value into its patterns as a constant, so an imported float matches within `f64::EPSILON` ([#546](https://github.com/project-minigraf/minigraf/issues/546)).
@@ -642,6 +642,8 @@ Each branch (or a single clause) may contain any `WhereClause`: `Pattern`, `Rule
 ### How branches meet the outer row
 
 An `or` and an `or-join` run after every other clause of their clause list except the `not`s that need what they bind, in text order. For each outer row, a branch takes from it every variable the branch names (`or`) or its join variables (`or-join`), and compares them with the facts it matches as joins compare them (see [Join rules](#join-rules)): floats by IEEE `==`, and a keyword equals a ref to the entity it names. The outer row's value is the one kept. A branch that does not name a variable constrains nothing about it: `(or-join [?e] [?x :a 1] [?e :b 2])` keeps every outer row when some entity has `:a 1`. The rows an `or` / `or-join` returns are distinct: two rows with equal values in every variable bound so far are one row (`0.0` equals `-0.0`; a keyword never equals a ref).
+
+Inside a branch, clauses run in the order they do in a `:where`, so a `not` or nested `or` in a branch sees a variable an expression of the branch binds. Over `[:x :n 1] [:y :n 2] [:z :n 5]`, `[:find ?e :where [?e :n ?v] (or-join [?e ?v] (and [(+ ?v 1) ?w] (not [?f :n ?w])) [?e :n 5])]` returns `:y` and `:z`. Before v3.0.0 a branch ran its `not`s before its expressions, so that `not` saw `?w` unbound, matched any fact, and the query returned `:z` only ([#551](https://github.com/project-minigraf/minigraf/issues/551)).
 <!-- @end -->
 <!-- @until v3.0.0 -->
 A branch with no `not`, no expression reading an outer variable and no pseudo-attribute reading an outer pattern is evaluated alone and joined to the outer rows by exact value equality, so a keyword never meets a ref to the entity it names, branches naming different outer variables meet no outer row, and an `or-join` branch that does not bind every join variable matches nothing. Other branches start from each outer row and compare as joins do ([#546](https://github.com/project-minigraf/minigraf/issues/546)).
@@ -899,11 +901,11 @@ Use in a `:where` clause as a single-argument filter:
 Unknown function names in `:find` aggregates, `:over` window clauses, and `[(name? ?var)]` filter expressions are **not rejected at parse time** — the parser emits `WindowFunc::Udf(name)`, `UnaryOp::Udf(name)`, etc. and defers validation to execution. If the name is not registered when the query runs, the executor returns an `Err` with a clear message.
 <!-- @since v3.0.0 -->
 
-Aggregate and window function names are resolved when the query starts, before any row is read: an unknown aggregate fails with `QRY-010` and an unknown window function with `QRY-011`, even on an empty database or when no row matches.
+Aggregate and window function names are resolved when the query starts, before any row is read: an unknown aggregate fails with `QRY-010` and an unknown window function with `QRY-011`, even on an empty database or when no row matches. So is every predicate the query names, at any depth (an `or` branch, a `not` / `not-join` body, an `or` branch of a rule the query evaluates): an unknown one fails with `QRY-007` ([#551](https://github.com/project-minigraf/minigraf/issues/551)).
 <!-- @end -->
 <!-- @until v3.0.0 -->
 
-An unknown aggregate or window function is only reported once a row reaches it (as `INT-029` / `INT-030`); a query where no row matches returns an empty result instead.
+An unknown aggregate or window function is only reported once a row reaches it (as `INT-029` / `INT-030`); a query where no row matches returns an empty result instead. An unknown predicate in an `or` branch is reported only when a row reaches it, and one in a `not` / `not-join` body makes the body match nothing, so the `not` keeps every outer row.
 <!-- @end -->
 
 This means queries referencing UDFs can be parsed and stored before the UDF is registered, and will succeed once registration occurs.
