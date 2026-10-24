@@ -36,6 +36,7 @@ Minigraf's bindings are split into [support tiers](https://github.com/project-mi
 | **User-Defined Functions** | ✅ UDF aggregates + predicates (v0.17.0) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Prepared Statements** | ✅ `$slot` temporal bind tokens (v0.18.0) | ⚠️ Limited | ❌ No | ✅ Yes | ✅ Yes |
 | **Set values** | ✅ `#{...}` values, membership predicates, `collect-set` (v3.0.0) | ✅ Yes | ⚠️ Lists | ⚠️ Lists | ❌ No |
+| **Ordered, bounded results** | ✅ `:order-by`, `:limit`, `:offset`, top-k (v3.0.0) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
 | **WASM Ready** | ✅ Yes (browser, WASI) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
 | **Platform support** | Tier 1: Rust, Python, browser WASM. Tier 2 (experimental): WASI, Android, iOS, Node.js, Java, C | JVM only | Native, WASM (limited) | JVM only | Native, WASM |
