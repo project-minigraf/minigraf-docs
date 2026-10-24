@@ -915,6 +915,39 @@ An unknown aggregate or window function is only reported once a row reaches it (
 <!-- @end -->
 
 This means queries referencing UDFs can be parsed and stored before the UDF is registered, and will succeed once registration occurs.
+<!-- @since v3.0.0 -->
+
+### Functions That Can Fail
+
+`Minigraf::try_register_predicate(name, f)` and `Minigraf::try_register_aggregate(name, init, step, finalise)` take closures that return a `Result`, with `UdfError` as the error type:
+
+```rust
+use minigraf::{UdfError, Value};
+
+db.try_register_predicate("email?", |v| match v {
+    Value::String(s) => Ok(s.contains('@')),
+    _ => Err(UdfError::new("not a string")),
+})?;
+```
+
+A call that returns `Err` fails the whole query with `QRY-014`, ``user function `email?` failed: not a string``. It is never read as `false` or `nil`, and no later call of any user function is made for that query. A cursor treats it as any other read error: it returns the rows of the batches the query finished before the failure, then the error, then no more rows. Functions registered with `register_predicate` / `register_aggregate` never fail this way.
+
+### Registration Snapshots and Re-Entry
+
+A query reads its functions from the registry as it was when the query opened. A function registered later is not visible to a query or cursor that is already open; every query opened afterwards sees it.
+
+No database lock is held while a user function runs, so a function may call back into its own database:
+
+| From inside a user function | Outer query is a plain read | Outer query runs in `WriteTransaction::execute` |
+|---|---|---|
+| `execute` (query), `query`, `prepare`, `PreparedQuery::execute` / `query`, `fact_log` | Runs, on its own snapshot | `INT-001` |
+| `execute` (`transact` / `retract` / `rule`), `begin_write` | Runs; the outer query does not see the write | `INT-001` |
+| `checkpoint`, `verify`, `rebuild_indexes` | Runs | `INT-001` |
+| `register_predicate` / `register_aggregate` and their `try_` forms | Runs; the outer query does not see the new function | Runs |
+| A nested query that calls another user function | Runs | `INT-001` (the nested query is refused) |
+
+Before v3.0.0 a user function that registered a function, or that ran a checkpoint inside a write transaction, deadlocked.
+<!-- @end -->
 
 ---
 

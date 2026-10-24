@@ -53,7 +53,7 @@ src/
 src/
 ├── main.rs                     — binary entry point (interactive REPL)
 ├── lib.rs                      — public API exports
-├── db.rs                       — public embedded API: Minigraf, OpenOptions (incl. read_only), WriteTransaction, IntegrityReport; execute / query / fact_log / prepare / begin_write / checkpoint / verify / rebuild_indexes; register_aggregate / register_predicate for UDFs
+├── db.rs                       — public embedded API: Minigraf, OpenOptions (incl. read_only), WriteTransaction, IntegrityReport; execute / query / fact_log / prepare / begin_write / checkpoint / verify / rebuild_indexes; register_aggregate / register_predicate and their fallible try_ forms (UdfError, QRY-014) for UDFs
 ├── cursor.rs                   — Cursor / Batch: owned, Send cursor returned by Minigraf::query and PreparedQuery::query
 ├── fact_log.rs                 — FactLog / FactFilter / FactRecord / FactOrder: every fact version, streamed without Datalog
 ├── log_writer.rs               — LogWriter: builds a new file from FactRecords, keeping their tx and valid time
@@ -481,7 +481,12 @@ existing handle is always the right move (#304).
 - Exclusive write via `Mutex<WriteTransaction>`
 - One live handle per file per process, enforced by the kernel file lock (see File Locking above)
 - Rule registry is independently `Arc<RwLock<RuleRegistry>>`
+<!-- @until v3.0.0 -->
 - Function registry (`FunctionRegistry`) is `Arc<RwLock<FunctionRegistry>>` — shared between all query executions; built-in aggregates registered at startup; user-defined aggregates and predicates registered via `register_aggregate` / `register_predicate` (Phase 7.7b)
+<!-- @end -->
+<!-- @since v3.0.0 -->
+- Function registry: `Functions`, a `RwLock<Arc<FunctionRegistry>>` shared by every handle of a database. A query takes a snapshot (an `Arc` clone) when it opens and reads every function from it, so it holds no lock while a user function runs and user functions may call back into the database. Registration (`register_*`, `try_register_*`) copies the registry, inserts the function and swaps the copy in (#180)
+<!-- @end -->
 - Page cache uses read-lock on hits, write-lock only on misses — minimises contention for read-heavy workloads
 - `BrowserDb` (`wasm32-unknown-unknown`) runs single-threaded — all `Arc`/`RwLock`/`Mutex` calls compile as single-threaded stubs under the `browser` feature; no WASM thread support
 <!-- @range v2.0.6..v3.0.0 -->
