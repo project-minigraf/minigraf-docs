@@ -941,6 +941,15 @@ A filter clause keeps the current binding if the expression evaluates to a truth
 [(matches? ?email "^[^@]+@[^@]+$")]   ;; regex validated at parse time
 ```
 
+<!-- @since v2.0.11 -->
+`=` and `!=` compare as joins do: a keyword equals a ref to the entity it names, so
+`[(= ?friend :bob)]` keeps a row whose `?friend` is a ref to `:bob`'s entity, as the
+pattern `[?x :friend :bob]` matches it ([#744](https://github.com/project-minigraf/minigraf/issues/744)).
+A keyword still equals only the same keyword, and `<`, `>`, `<=` and `>=` on a keyword
+or a ref keep no row.
+
+<!-- @end -->
+
 <!-- @since v3.0.0 -->
 A filter is a list inside a vector. A bare list in `:where` is a rule call, and a rule's
 name is a symbol that is neither a variable nor an operator, so `(< ?age 30)` without
