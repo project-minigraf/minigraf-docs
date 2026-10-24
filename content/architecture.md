@@ -67,8 +67,8 @@ src/
 ├── graph/
 │   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
 │   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
-├── query/datalog/              — parser, executor, matcher, evaluator, stratification, rules, functions, optimizer, prepared, magic_sets, types (as in v2.x; the optimizer reorders on every build, the `wasm` feature is a deprecated no-op)
-├── query/engine/               — streaming query engine: plan (which queries it runs), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), anti (`not` / `not-join`, hashed or per row from a seed), union and distinct (`or` / `or-join`), project (ids → values), cells, batches and ids
+├── query/datalog/              — parser, executor (transact/retract/rule commands; opens every query on the engine), matcher (EDN → value), evaluator (rule limits), aggregate (accumulators and window values the engine uses), stratification, rules, functions, optimizer, prepared, magic_sets, types; the optimizer reorders on every build, the `wasm` feature is a deprecated no-op
+├── query/engine/               — streaming query engine, which runs every query: plan (the operator tree of a query), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), anti (`not` / `not-join`, hashed or per row from a seed), union and distinct (`or` / `or-join`), aggregate, window, relation and recursive (rules), meter (query memory), project (ids → values), cells, batches and ids
 └── storage/
     ├── mod.rs                  — StorageBackend trait, CommittedReader trait, LegacyHeaderV7 (v7 migration only)
     ├── persistent_facts.rs     — PersistentFactStorage: v8 save/load, copy-on-write checkpoint, v7 → v8 migration
@@ -377,20 +377,14 @@ A checkpoint that fails after it may have written (a failed write, a full disk, 
 
 1. **Parse** — EDN string → `DatalogQuery`; `not` / `not-join` / `Expr` clauses safety-checked at this stage; regex patterns in `matches?` validated at parse time
 2. **Plan** — `optimizer.rs` selects an index hint and reorders join clauses by selectivity; `Expr` clauses are passed through unchanged (not reordered — ordering guaranteed by safety check)
+<!-- @since v3.0.0 -->
+3. **Execute** — the streaming engine (below) runs the query: one tree of operators reading the covering indexes, with `:as-of`, net-assert (decided on the index keys, before any fact is decoded) and valid time applied while reading. The latest assertion's window is a fact's only current valid-time window; earlier windows stay visible through `:as-of` (#435). Rules are evaluated by the same engine. The executor's own query path is gone ([#551](https://github.com/project-minigraf/minigraf/issues/551)).
+<!-- @end -->
 <!-- @until v3.0.0 -->
 3. **Execute** — `executor.rs` iterates patterns, resolves `FactRef`s via page cache, applies temporal filter:
-<!-- @end -->
-<!-- @since v3.0.0 -->
-3. **Execute** — `executor.rs` iterates patterns over the covering indexes (committed entries that net-assert would hide are skipped on the index keys, before any fact is decoded), then applies the temporal filter:
-<!-- @end -->
    - Step 1: tx-time filter (`:as-of` counter or timestamp)
    - Step 2: net-assertion filter — per `(entity, attribute, value)` triple, keep only the latest `tx_count`; discard if that record is a retraction (`asserted = false`)
-<!-- @until v3.0.0 -->
      (Known issue [#435](https://github.com/project-minigraf/minigraf/issues/435): v2.x keeps the latest record per valid-time window rather than per triple, so a later assertion of the same fact with a different window does not replace the earlier window. Fixed in v3.0.0.)
-<!-- @end -->
-<!-- @since v3.0.0 -->
-     The latest assertion's window is the fact's only current valid-time window; earlier windows stay visible through `:as-of` (#435).
-<!-- @end -->
    - Step 3: valid-time filter (`:valid-at` or `:any-valid-time`)
    - Step 4: not / not-join post-filter — applied per candidate binding after pattern matching
    - Step 5: `Expr` clause evaluation (`apply_expr_clauses`) — filter predicates drop non-truthy rows; arithmetic bindings extend the binding with the result value; type mismatches and div/0 silently drop the row
@@ -398,24 +392,25 @@ A checkpoint that fails after it may have written (a failed write, a full disk, 
 4. **Evaluate rules** — `StratifiedEvaluator` stratifies rules; for each stratum:
    - Positive rules evaluated via `RecursiveEvaluator` (semi-naive fixed-point iteration)
    - Mixed rules (containing `not` / `not-join` / `Expr`) run positive patterns first, then apply negation filters and expr clauses per binding
+<!-- @end -->
 
 <!-- @since v3.0.0 -->
 ### Streaming engine
 
-Queries whose `:where` holds patterns, expression clauses, `not` / `not-join`, `or` / `or-join` and rule invocations, and whose `:find` holds plain variables, aggregates or window functions, run on a streaming engine (`query/engine/`) instead of the executor above. Every other query (a nested `or`, a rule whose body has no pattern, an `:as-of` timestamp) still takes the executor; later 3.x releases move them over without API changes. Queries inside a `WriteTransaction` run on the engine too.
+Every query runs on a streaming engine (`query/engine/`): patterns, expression clauses, `not` / `not-join`, `or` / `or-join` and rule invocations in `:where`, plain variables, aggregates and window functions in `:find`. The executor's query path, its pattern matcher and its rule evaluators are gone ([#551](https://github.com/project-minigraf/minigraf/issues/551)). Queries inside a `WriteTransaction` run on the engine too.
 
-- **Plan.** Clauses run in the executor's order. The first pattern's constant and bound positions choose the index range: EAVT for a known entity, AVET for an attribute and value (`[?e :person/name "Alice"]` reads only the entries for `"Alice"`), AEVT for an attribute alone.
+- **Plan.** Clauses run in the optimizer's order. The first pattern's constant and bound positions choose the index range: EAVT for a known entity, AVET for an attribute and value (`[?e :person/name "Alice"]` reads only the entries for `"Alice"`), AEVT for an attribute alone.
 - **Joins.** Each later pattern is an `IndexNestedLoopJoin` when its entity is a variable already bound (one entity's range per row, committed and uncheckpointed), or, with a constant attribute, when its value is (per row, the AVET ranges of the values that join-equal it and the uncheckpointed facts with those values, read once per query; a value that is an entity finds the keyword naming it only where the query made the entity from that keyword, and otherwise the join is a `HashJoin`). Any other join is a `HashJoin` (on the attribute position, or a cross product), whose table holds the side with the smaller estimate; for a cross product the outer side's estimate is the product of its patterns', so a chain of patterns that share no variable keeps each small inner pattern in the table, not the growing outer side. Join keys follow the [join rules](datalog-reference#join-rules).
 - **Pseudo-attributes.** The parser names each per-fact pseudo-attribute's source pattern ([pseudo-attributes](datalog-reference#pseudo-attributes)); the source's scan or join fills a metadata column (valid from/to, tx count, tx id) from the fact's key, and the pseudo-attribute pattern binds or checks against it. A `:db/valid-at` pattern joins with every visible fact of its entity.
 - **Negation.** `not` and `not-join` are an `AntiJoin`: it keeps the rows for which the body has no row, and never removes duplicates. A body with the same rows for every outer row (its expressions and pseudo-attributes read only variables its own patterns bind) runs once, and its rows' values of the shared variables form a hash set. Any other body, and one whose first pattern's entity comes from the outer row, runs once per row from a one-row seed of the values it shares, and stops at its first row; an entity-bound body costs one index probe per row and holds nothing. Comparisons follow the [join rules](datalog-reference#comparing-with-the-outer-row).
 - **Disjunction.** `or` and `or-join` are a `Union` followed by a `Distinct`. Each branch is planned as a negation body is: one with the same rows for every outer row runs once, into a table of its rows keyed on the values it shares with the outer row; any other runs once per outer row from a seed. `Union` extends each outer row by every row of every branch (when the branches bind nothing new, an outer row is returned once, from the first branch with a row), and `Distinct` keeps one row of each set of equal rows. Comparisons follow the [branch rules](datalog-reference#how-branches-meet-the-outer-row).
 - **Rules.** Before the query body runs, the rules it calls are evaluated stratum by stratum into relations: per predicate, the facts its rules derive, kept once each. The first round runs every rule over all facts; each later round runs a rule once per call of its own stratum in its body, that call reading only the facts the previous round derived (semi-naive evaluation), until a round derives nothing. A rule that reads its own stratum another way (in an `or` branch, or through a pattern such as `[?x :p ?y]` or `[?x ?a ?v]`) runs over all facts every round. Scans read a relation's facts after the stored ones, so every pattern sees derived facts, which have no metadata. The query body is then planned as any query, a rule call read as a pattern of its relation.
-- **Scan.** Reads the committed index keys of that range, deciding net-assert on the keys, then the uncheckpointed facts of the same range; a triple with uncheckpointed records is decided by them alone. `:as-of` and valid time are applied while reading.
+- **Scan.** Reads the committed index keys of that range, deciding net-assert on the keys, then the uncheckpointed facts of the same range; a triple with uncheckpointed records is decided by them alone. `:as-of` and valid time are applied while reading. An `:as-of` time is a bound on the transaction counter when transaction times rise with the counter, and otherwise keeps the versions of the transactions at or before that time.
 - **Batches.** Operators pass columnar batches of up to 1,024 rows of entity and ident ids; ids become values only for the rows a query returns.
 - **Memory.** Every operator that keeps state counts what it holds on one meter per query: a `HashJoin`'s table, a negation's or a branch's table, `Distinct`'s set, an aggregate's groups, a window's rows, the facts the rules derive, and the query's entity and ident ids. Each entry costs a fixed estimate plus the bytes of its strings, the same on every platform, and tables grow with `try_reserve`. Over `OpenOptions::query_memory_limit` (off by default), or when the allocator refuses memory, the query fails with `QRY-012` and frees what it held. Batches passing between operators are not counted.
 - **Cursors.** A `Cursor` pulls one batch from the operators when it runs out of rows, so memory holds one batch, and closing or dropping the cursor stops the work. A read error that happens after some rows of a `next_batch` call were gathered is returned by the next call. `execute` reads every batch at once and returns the same rows.
 
-The engine returns the same rows as the executor, as a bag: in the test suite every query it runs is also run by the executor and the answers are compared.
+The engine returns the rows the executor returned, as a bag, except where a v3.0.0 change says otherwise (the CHANGELOG's breaking changes): until the executor's query path was removed, the test suite ran every query on both and compared the answers, and the answers of the suites that relied on that comparison are recorded in the repository (`tests/answers/`).
 <!-- @end -->
 
 ### Rule Registration
