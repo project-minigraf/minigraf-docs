@@ -248,6 +248,33 @@ char *cheap = minigraf_prepared_execute(pq, "{\"max\": 500}");   /* C: bindings 
 ```
 
 A missing slot is `API-022`, a slot in an attribute position `API-023`, and a value of the wrong kind for its slot `API-024`. In Python, Java, Android and Swift these raise `MiniGrafError.Api`. In Node.js and C, closing the database releases its prepared queries, and one used afterwards fails with `API-018`. Each binding's README lists its plain and typed forms.
+
+A [set](datalog-reference#sets) binds as the language's own set type, for `in?` and the other set predicates or a set-valued attribute; a UUID element is a ref, and a set inside a set is `API-021`. Keyword elements use the typed value:
+
+```python
+pq = db.prepare("(query [:find ?e :where [?e :user/role ?r] [(in? ?r $roles)]])")
+pq.execute(roles=minigraf.Value.SET([minigraf.Value.KEYWORD(":role/admin")]))
+# a set or frozenset of plain values binds directly: {1, 2, 3}
+```
+
+```kotlin
+pq.execute("roles" to setOf(MiniGrafValue.Keyword(":role/admin")))   // Kotlin; Set.of(...) from Java
+```
+
+```swift
+let roles: Set<MiniGrafValue> = [.keyword(value: ":role/admin")]
+try pq.execute(["roles": roles])        // Swift; Set([1, 2, 3]) for plain values
+```
+
+```js
+pq.execute({ roles: new Set([{ type: 'keyword', value: ':role/admin' }]) })   // Node.js
+```
+
+```c
+minigraf_prepared_execute(pq, "{\"roles\": {\"type\": \"set\", \"value\": [{\"type\": \"keyword\", \"value\": \":role/admin\"}]}}");
+```
+
+Set values come back as JSON arrays from `execute`, and with their elements' types in fact records.
 <!-- @end -->
 
 ## REPL equivalent
