@@ -10,13 +10,13 @@ order: 8
 
 ## Scenario
 
-Corestore's backend runs the same queries on every customer page load, every product lookup, and every delivery status check. Parsing the same query string on every API call wastes CPU — and in a hot path that fires hundreds of times per second, that waste compounds quickly. **Prepared queries** move parsing and planning to startup time; bind slots substitute the variable parts at execute time.
+Corestore's backend runs the same queries on every customer page load, every product lookup, and every delivery status check. Parsing the same query string on every API call wastes CPU — and in a hot path that fires hundreds of times per second, that waste compounds quickly. **Prepared queries** move parsing to startup time; bind slots substitute the variable parts at execute time.
 
 ---
 
 ## Why prepare?
 
-Parsing a Datalog query involves tokenising the input, building an AST, checking safety constraints (every variable in `:find` must be bound in `:where`), and computing a query plan — including index selection and join reordering. When the query shape never changes between calls, doing all of that work on every invocation is unnecessary overhead. Prepared queries pay the parse-and-plan cost once at startup; each subsequent `execute()` substitutes the bind values and runs the already-planned query immediately.
+Parsing a Datalog query involves tokenising the input, building an AST and checking safety constraints (every variable in `:find` must be bound in `:where`). When the query shape never changes between calls, doing that work on every invocation is unnecessary overhead. Prepared queries pay the parse cost once at startup; each subsequent `execute()` substitutes the bind values, plans the query with them (index selection and join reordering) and runs it. Planning with the actual values lets the planner use them.
 
 ---
 
@@ -37,12 +37,22 @@ A bind slot is any `$identifier` token in the query string. It marks a position 
 
 The permitted `BindValue` variant depends on where the slot appears:
 
+<!-- @until v3.0.0 -->
 | Position | Permitted `BindValue` variants |
 |---|---|
 | Entity in pattern `[$entity :attr ?v]` | `BindValue::Entity(Uuid)` |
 | Value in pattern `[?e :attr $val]` | `BindValue::Val(Value)` |
 | `:as-of $tx` | `BindValue::TxCount(u64)`, `BindValue::Timestamp(i64)` |
 | `:valid-at $date` | `BindValue::Timestamp(i64)`, `BindValue::AnyValidTime` |
+<!-- @end -->
+<!-- @since v3.0.0 -->
+| Position | Permitted `BindValue` variants |
+|---|---|
+| Entity in pattern `[$entity :attr ?v]` | `BindValue::Entity(Uuid)`, `BindValue::Val(Value::Ref(Uuid))` |
+| Value in pattern `[?e :attr $val]`, expression, rule argument | `BindValue::Val(Value)`, `BindValue::Entity(Uuid)` |
+| `:as-of $tx` | `BindValue::TxCount(u64)`, `BindValue::Timestamp(i64)` |
+| `:valid-at $date` | `BindValue::Timestamp(i64)`, `BindValue::AnyValidTime` |
+<!-- @end -->
 
 ---
 
@@ -151,10 +161,13 @@ The attribute position in a triple pattern is **not** a valid bind slot:
 ; NOT allowed — attribute position cannot be a bind slot:
 (query [:find ?value
         :where [?entity $attr ?value]])
-;                        ↑ PARSE ERROR
+;                        ↑ rejected by prepare()
 ```
+<!-- @since v3.0.0 -->
+`prepare()` rejects it with `API-023`. A missing bind value at execute time is `API-022`, and a bind value of the wrong kind for its slot is `API-024`.
+<!-- @end -->
 
-The reason is architectural: Minigraf's query optimizer selects which index to use — EAVT, AEVT, AVET, or VAET — based on which positions are known at prepare time. The attribute is the primary discriminator for that decision. If the attribute were a bind slot, the optimizer would have no information to choose an index at prepare time, and the plan would either be wrong or deferred to execute time, defeating the purpose of preparation.
+The reason is architectural: Minigraf's query optimizer selects which index to use — EAVT, AEVT, AVET, or VAET — based on which positions of a pattern are known, and the attribute is the primary discriminator for that decision. A query whose attribute could change would need a different kind of plan for every value, so the attribute is fixed when the query is prepared.
 
 When you genuinely need to query across different attributes, write separate prepared queries — one per attribute — and call whichever one matches the lookup you need.
 
@@ -185,18 +198,35 @@ let result = q.execute(&[])?;
 
 ---
 
+<!-- @since v3.0.0 -->
+## In the browser
+
+`BrowserDb.prepare()` gives the browser the same prepared queries. Bindings are a plain object of slot name (without the `$`) to value:
+
+```js
+const pq = db.prepare(`(query [:find ?name
+                               :where [?p :product/price ?price]
+                                      [(< ?price $max)]
+                                      [?p :product/name ?name]])`);
+const cheap = JSON.parse(pq.execute({ max: 500 })).results;
+const mid = JSON.parse(pq.execute({ max: 1000 })).results;
+```
+
+A boolean, a string, `null`, a `bigint` and a `number` bind as values; a `number` is an integer when `Number.isInteger` accepts it and a float otherwise. The other kinds use a `{ type, value }` object: `{ type: 'float', value: 2 }` for a float with no fractional part, `'keyword'`, `'ref'`, `{ type: 'entity', value: uuid }` for an entity slot, `{ type: 'txCount', value: 50 }` or `{ type: 'timestamp', value: Date.now() }` for `:as-of`, and `{ type: 'anyValidTime' }` for `:valid-at`. `pq.query(bindings)` returns a cursor, as `db.query()` does.
+<!-- @end -->
+
 ## REPL equivalent
 
-The REPL does not support bind slots — every query uses literal values. Prepared queries are a Rust API feature for production applications where parse overhead matters and query shapes are stable. When exploring the database interactively or testing query logic, write queries with literal values in the REPL; port them to prepared queries when integrating into application code.
+The REPL does not support bind slots — every query uses literal values. Prepared queries are an API feature for production applications where parse overhead matters and query shapes are stable. When exploring the database interactively or testing query logic, write queries with literal values in the REPL; port them to prepared queries when integrating into application code.
 
 ---
 
 ## Key concepts
 
 - **`$slot`** — named bind slot; marks a position to be substituted at execute time.
-- **`db.prepare(str)`** — parses and plans the query once; returns a `PreparedQuery`.
-- **`pq.execute(&[("slot", BindValue::...)])`** — substitutes bind values and runs the planned query.
-- **Attribute position is not parameterisable** — index selection happens at prepare time and depends on knowing the attribute.
+- **`db.prepare(str)`** — parses and validates the query once; returns a `PreparedQuery`.
+- **`pq.execute(&[("slot", BindValue::...)])`** — substitutes bind values, plans the query and runs it.
+- **Attribute position is not parameterisable** — index selection depends on knowing the attribute.
 - **Each `execute()` sees live state** — `PreparedQuery` holds `Arc` references to the fact store; no staleness.
 - **`:as-of $tx`** accepts `TxCount(u64)` or `Timestamp(i64)`.
 - **`:valid-at $date`** accepts `Timestamp(i64)` or `AnyValidTime` (lifts the filter entirely).

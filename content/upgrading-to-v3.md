@@ -35,12 +35,14 @@ v2.x keeps getting data-integrity and security fixes for 12 months after v3.0.0 
 | A query that reached a damaged index page fell back to a full scan | The page's `STG-029` / `STG-030` / `STG-031` |
 | A file cut short of its last checkpoint opened, then its queries and checkpoints failed with `INT-049` | `STG-044` at open; the file is not modified |
 | An older `.graph` restored next to a newer WAL replayed it and silently lost the transactions in between | `STG-047` at open; both files are left unmodified |
+| A prepared query's missing bind value, attribute slot, or bind value of the wrong kind was `INT-033` / `INT-034` / `INT-035` | `API-022` / `API-023` / `API-024`, same messages |
 
 Every code is described in the [error reference](error-reference).
 
 ## New APIs
 
 - `Minigraf::query()` and `PreparedQuery::query()` return a [cursor](datalog-reference#cursors); `BrowserDb.query()` returns a `BrowserCursor`.
+- `BrowserDb.prepare()` returns a [prepared query](tutorial-08-prepared-queries#in-the-browser). In Rust, `BindValue::Entity` and `BindValue::Val(Value::Ref(..))` now fit each other's slots.
 - `OpenOptions::read_only`, `Minigraf::fact_log()`, `LogWriter`, `Minigraf::verify()` and `Minigraf::rebuild_indexes()`: see [Reading, checking and copying databases](database-tools).
 
 ## Checkpoints

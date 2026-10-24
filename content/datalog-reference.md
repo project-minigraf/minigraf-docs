@@ -1073,7 +1073,7 @@ When a query binds at least one argument to a recursive rule, Minigraf automatic
 
 ## Prepared Statements (Rust API)
 
-Parse and plan a query once; execute it many times with different bind values — including temporal filters — without re-parsing or re-planning on each call.
+Parse and validate a query once; execute it many times with different bind values — including temporal filters — without re-parsing it on each call. Each execution substitutes the values and plans the query with them.
 
 ### Syntax
 
@@ -1089,14 +1089,26 @@ Parse and plan a query once; execute it many times with different bind values �
 
 ### Bind slot positions and permitted types
 
+<!-- @until v3.0.0 -->
 | Position | Permitted `BindValue` variants |
 |---|---|
 | Entity in pattern (`[$entity :attr ?v]`) | `Entity(Uuid)` |
 | Value in pattern (`[?e :attr $val]`) | `Val(Value)` |
 | `:as-of $tx` | `TxCount(u64)`, `Timestamp(i64)` |
 | `:valid-at $date` | `Timestamp(i64)`, `AnyValidTime` |
+<!-- @end -->
+<!-- @since v3.0.0 -->
+| Position | Permitted `BindValue` variants |
+|---|---|
+| Entity in pattern (`[$entity :attr ?v]`) | `Entity(Uuid)`, `Val(Value::Ref(Uuid))` |
+| Value in pattern (`[?e :attr $val]`), expression, rule argument | `Val(Value)`, `Entity(Uuid)` (as `Value::Ref`) |
+| `:as-of $tx` | `TxCount(u64)`, `Timestamp(i64)` |
+| `:valid-at $date` | `Timestamp(i64)`, `AnyValidTime` |
 
-**Attribute position is not parameterisable** — substituting the attribute name at execute time would make it impossible to select the correct index at prepare time, defeating plan reuse.
+A missing bind value is `API-022`, a bind slot in an attribute position `API-023` (from `prepare`), and a bind value of the wrong kind for its slot `API-024`. Before v3.0.0 these were `INT-033`, `INT-034` and `INT-035`.
+<!-- @end -->
+
+**Attribute position is not parameterisable** — the attribute decides which index a pattern reads, so it must be known when the query is prepared.
 
 ### API
 
@@ -1105,14 +1117,14 @@ use minigraf::{Minigraf, OpenOptions, BindValue};
 
 let db = OpenOptions::new().path("agents.graph").open()?;
 
-// Prepare once — parses, validates, and computes the query plan
+// Prepare once — parses and validates the query
 let pq = db.prepare(
     "(query [:find ?belief
              :as-of $tx
              :where [$entity :belief/value ?belief]])"
 )?;
 
-// Execute many times — plan is reused, only bind values are substituted
+// Execute many times — the bind values are substituted and the query runs
 let r1 = pq.execute(&[
     ("tx",     BindValue::TxCount(50)),
     ("entity", BindValue::Entity(alice_id)),
@@ -1129,6 +1141,9 @@ let r2 = pq.execute(&[
 - `PreparedQuery` holds `Arc` clones of the live fact store — each `execute()` sees the current state (including facts transacted after `prepare()`)
 - `db.execute(str)` string API is unchanged — no breaking change
 - `BindValue::AnyValidTime` is the programmatic equivalent of writing `:any-valid-time` in the query string
+<!-- @since v3.0.0 -->
+- In the browser, `BrowserDb.prepare(text)` returns a `BrowserPreparedQuery` with `execute(bindings)` (JSON, like `execute`) and `query(bindings)` (a `BrowserCursor`). Bindings are an object of slot name to a boolean, a `number` (an integer when `Number.isInteger`, else a float), a `bigint`, a string, `null`, or a `{ type, value }` form for the other kinds: `{ type: 'float', value: 2 }`, `'keyword'`, `'ref'`, `'entity'`, `'txCount'`, `'timestamp'` and `{ type: 'anyValidTime' }`. See [Tutorial 8](tutorial-08-prepared-queries#in-the-browser).
+<!-- @end -->
 <!-- @since v3.0.0 -->
 
 ### Cursors
@@ -1200,4 +1215,4 @@ Multi-line input is supported — press Enter on an incomplete expression to con
 - **Disjunction** (`or` / `or-join`) supported — see [Disjunction](#disjunction) above.
 - **User-defined aggregate functions** (`register_aggregate`) usable in `:find` grouping and `:over` window clauses — see [User-Defined Functions](#user-defined-functions) above.
 - **User-defined predicate functions** (`register_predicate`) usable in `[(name? ?var)]` `:where` clauses — see [User-Defined Functions](#user-defined-functions) above.
-- **Prepared statements** (`db.prepare(str)` → `PreparedQuery`) — parse + plan once, execute many times with named `$slot` bind values — see [Prepared Statements](#prepared-statements-rust-api) above.
+- **Prepared statements** (`db.prepare(str)` → `PreparedQuery`) — parse once, execute many times with named `$slot` bind values — see [Prepared Statements](#prepared-statements-rust-api) above.
