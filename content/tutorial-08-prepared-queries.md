@@ -213,6 +213,39 @@ const mid = JSON.parse(pq.execute({ max: 1000 })).results;
 ```
 
 A boolean, a string, `null`, a `bigint` and a `number` bind as values; a `number` is an integer when `Number.isInteger` accepts it and a float otherwise. The other kinds use a `{ type, value }` object: `{ type: 'float', value: 2 }` for a float with no fractional part, `'keyword'`, `'ref'`, `{ type: 'entity', value: uuid }` for an entity slot, `{ type: 'txCount', value: 50 }` or `{ type: 'timestamp', value: Date.now() }` for `:as-of`, and `{ type: 'anyValidTime' }` for `:valid-at`. `pq.query(bindings)` returns a cursor, as `db.query()` does.
+
+## In the other bindings
+
+Every binding has the same prepared queries: `prepare(text)` once, then `execute(bindings)` for the JSON result or `query(bindings)` for a cursor. Plain host values bind as values (booleans, integers, floats, strings, null), a UUID type binds an entity, and a typed bind value covers the other kinds.
+
+```python
+pq = db.prepare("(query [:find ?name :where [?p :product/price ?price] [(< ?price $max)] [?p :product/name ?name]])")
+cheap = json.loads(pq.execute(max=500))["results"]
+mid = json.loads(pq.execute({"max": 1000}))["results"]
+# minigraf.Entity(uuid), minigraf.TxCount(n), minigraf.Timestamp(ms), minigraf.ANY_VALID_TIME
+```
+
+```kotlin
+val cheap = pq.execute("max" to 500)            // Kotlin (JVM and Android)
+```
+
+```java
+String cheap = Minigraf.execute(pq, Map.of("max", 500));   // Java
+```
+
+```swift
+let cheap = try pq.execute(["max": 500])        // Swift
+```
+
+```js
+const cheap = JSON.parse(pq.execute({ max: 500 })).results   // Node.js
+```
+
+```c
+char *cheap = minigraf_prepared_execute(pq, "{\"max\": 500}");   /* C: bindings as JSON */
+```
+
+A missing slot is `API-022`, a slot in an attribute position `API-023`, and a value of the wrong kind for its slot `API-024`. In Python, Java, Android and Swift these raise `MiniGrafError.Api`. In Node.js and C, closing the database releases its prepared queries, and one used afterwards fails with `API-018`. Each binding's README lists its plain and typed forms.
 <!-- @end -->
 
 ## REPL equivalent
