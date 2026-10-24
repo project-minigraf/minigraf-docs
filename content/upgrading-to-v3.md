@@ -42,7 +42,8 @@ Every code is described in the [error reference](error-reference).
 ## New APIs
 
 - `Minigraf::query()` and `PreparedQuery::query()` return a [cursor](datalog-reference#cursors); `BrowserDb.query()` returns a `BrowserCursor`.
-- `BrowserDb.prepare()` returns a [prepared query](tutorial-08-prepared-queries#in-the-browser). In Rust, `BindValue::Entity` and `BindValue::Val(Value::Ref(..))` now fit each other's slots.
+- `BrowserDb.prepare()` returns a [prepared query](tutorial-08-prepared-queries#in-the-browser), and so does `prepare()` in [every other binding](tutorial-08-prepared-queries#in-the-other-bindings). In Rust, `BindValue::Entity` and `BindValue::Val(Value::Ref(..))` now fit each other's slots.
+- In Python, Java, Android and Swift, errors with an `API-` code (a bad argument, a closed object, a write to a read-only database, a bind mistake) are now `MiniGrafError.Api`, not `MiniGrafError.Other`. Code that caught `Other` for them must catch `Api`, and an exhaustive Kotlin `when` or Swift `switch` over `MiniGrafError` needs the new case.
 - `OpenOptions::read_only`, `Minigraf::fact_log()`, `LogWriter`, `Minigraf::verify()` and `Minigraf::rebuild_indexes()`: see [Reading, checking and copying databases](database-tools).
 
 ## Checkpoints
