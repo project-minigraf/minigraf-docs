@@ -272,6 +272,12 @@ A fact is a triple `[entity attribute value]` — optionally extended with valid
 
 Entities are UUIDs internally; you can use keywords as shorthand in the REPL (they are resolved to stable UUIDs per session).
 
+<!-- @since v3.0.0 -->
+A value can also be a **set** of the scalar values above, written `#{...}`:
+`[:alice :user/scopes #{:scope/read :scope/write}]`. See [Sets](#sets).
+
+<!-- @end -->
+
 ---
 
 ## Transact
@@ -1012,6 +1018,11 @@ Combine with aggregation:
 
 **Type predicates** (return `Boolean`): `string?` `integer?` `float?` `boolean?` `nil?`
 
+<!-- @since v3.0.0 -->
+**Set predicates** (return `Boolean`): `in?` `not-in?` `any-in?` `all-in?` `none-in?` ([Sets](#sets))
+
+<!-- @end -->
+
 ### Semantics
 
 - `<` `>` `<=` `>=` require both operands to be numeric (`Integer` or `Float`); type mismatch → row silently dropped
@@ -1027,6 +1038,90 @@ Combine with aggregation:
 All `?var` references in an expression clause must be bound by earlier `:where` clauses. An unbound variable is a parse-time error.
 
 ---
+
+<!-- @since v3.0.0 -->
+## Sets
+
+### Set values
+
+A set literal `#{...}` holds scalar literals: strings, numbers, booleans, `nil`, keywords
+and `#uuid` refs. It is a value like any other: transact it, retract it, match it in a
+pattern, compare it, join on it, group by it.
+
+```datalog
+(transact [[:alice :user/scopes #{:scope/read :scope/write}]
+           [:bob   :user/scopes #{:scope/read}]])
+
+(query [:find ?e :where [?e :user/scopes #{:scope/write :scope/read}]])
+;; => alice — element order does not matter
+```
+
+- Duplicates are removed: `#{1 1 2}` is `#{1 2}`.
+- Two elements are the same when they are equal values of the same type: `0.0` and
+  `-0.0` are one element (`-0.0` is kept), every NaN is one element, `1` is not `1.0`,
+  and a keyword is not a ref to the entity it names.
+- A set cannot hold a set (`PRS-119`), and its elements are literals only: a variable,
+  bind slot, vector, list or map inside is `PRS-120`. An unclosed `#{` is `PRS-121`.
+- A stored set may take up to 4,068 bytes, counting each keyword element as 6 bytes and
+  each ref as 10 (`WAL-003`). Sets in query text and bind values have no limit.
+- Results show a set as `#{...}` in the REPL and as a JSON array in JSON output, in a
+  fixed canonical order.
+
+### Set predicates
+
+| Predicate | Operands | True when |
+|---|---|---|
+| `(in? x S)` | value, set | `x` is an element of `S` |
+| `(not-in? x S)` | value, set | `x` is not an element of `S` |
+| `(any-in? A B)` | set, set | the sets share an element |
+| `(all-in? A B)` | set, set | every element of `A` is in `B` |
+| `(none-in? A B)` | set, set | the sets share no element |
+
+```datalog
+[(in? ?role #{:role/admin :role/owner})]          ;; filter
+[(any-in? ?scopes #{:scope/write}) ?can-write]    ;; binds true or false
+[(all-in? ?required ?granted)]                    ;; both operands variables
+```
+
+An operand can be a literal set, a set-valued attribute's variable or a bind slot.
+Membership uses the element equality above. `in?` of an empty set is false and
+`not-in?` true; `all-in?` and `none-in?` of an empty first set are true and `any-in?`
+false. A set where a value is needed, or a value where a set is needed, is a type
+mismatch: a filter drops the row and a binding binds nothing, so `not-in?` with a
+second operand that is no set is never true. `contains?` stays a string predicate.
+The five names cannot be registered as functions.
+
+### `collect-set`
+
+`[(collect-set ?e :attr) ?s]` binds, for each row, the set of the values of
+`[?e :attr ?v]`: the values of a multi-valued attribute gathered into one set.
+
+```datalog
+(transact [[:alice :user/scope :scope/read] [:alice :user/scope :scope/write]
+           [:bob   :user/scope :scope/read]])
+
+(query [:find ?e
+        :where [?e :user/role _]
+               [(collect-set ?e :user/scope) ?s]
+               [(in? :scope/write ?s)]])
+;; => alice
+```
+
+- It reads the facts the pattern `[?e :attr ?v]` would match under the query's
+  `:as-of` and `:valid-at`, retractions applied; it reads stored facts only, never a
+  rule's derived ones.
+- An entity with no value gives `#{}`, and the row is kept.
+- `?e` must be bound by an earlier clause (`INT-018`); a keyword names its entity. The
+  attribute is a keyword literal.
+- It works in `:where`, rule bodies, `not-join` bodies and `or` branches. When `?s` is
+  already bound, it keeps the rows where the two sets are equal.
+- Missing output variable: `PRS-122`. Operands that are not a variable then an attribute
+  keyword: `PRS-123`. A value found that is itself a set: `QRY-015` (match a set-valued
+  attribute with a pattern instead). Inside another expression: `PRS-067`.
+- The set counts toward `query_memory_limit` (`QRY-012`).
+
+---
+<!-- @end -->
 
 ## Recursive Rules
 

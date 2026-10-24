@@ -136,6 +136,14 @@ enum Value {
 }
 ```
 
+<!-- @since v3.0.0 -->
+From v3.0.0 `Value` is `#[non_exhaustive]` and has an eighth variant, `Set(ValueSet)`: a
+finite set of the scalar values above, never of sets, kept in `Value`'s order with
+duplicates removed (`#{...}` in Datalog). A `match` on `Value` outside the crate needs a
+wildcard arm.
+
+<!-- @end -->
+
 `VALID_TIME_FOREVER = i64::MAX` is the sentinel for open-ended valid time.
 
 ---
@@ -265,6 +273,7 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 - Entities and idents (attribute names and keyword values) are sequential ids from the DICT tree, assigned at checkpoint. The query layer still sees UUIDs and strings.
 - Integers use the FoundationDB tuple encoding; `tx↓` is the complemented `tx_count`, so the newest transaction comes first; `vt = FOREVER` is one byte.
 - Strings over 64 bytes are stored once (deduplicated) in value pages; the key holds a 32-byte prefix, a hash and a reference.
+- A set has value tag `0x08`, after refs. Its key bytes are its elements' own key encodings, sorted: up to 64 bytes inline in the key, longer stored once in a value page as a long string is.
 - Leaves are prefix-compressed with restart points; internal nodes hold shortest separators. There are no leaf sibling pointers: scans use a cursor with a parent stack and a forward `seek`.
 - A query reads only index leaves, the DICT pages that translate its ids, and a value page for a long string. Committed results come back in id order.
 
@@ -292,7 +301,7 @@ Sidecar     <db>.wal, version 2: the header records the base generation.
 - Unknown `required_features` bits fail with `STG-034`.
 - A file shorter than its meta page's `page_count`, such as an interrupted copy or a partial download, fails at open with `STG-044`, read-write and read-only, and is not modified. Open does not fall back to the other meta page: a valid newer meta means that checkpoint happened. `verify()` reports a `page_count` past the end of the file as `STG-044` too.
 
-**Limits.** String values up to 4,068 bytes; attribute names and keyword values up to 1,024 bytes (`WAL-003`).
+**Limits.** String values up to 4,068 bytes; attribute names and keyword values up to 1,024 bytes; set values up to 4,068 bytes, counting each keyword element as 6 bytes and each ref as 10 (`WAL-003`).
 
 **Migration.**
 - v7 files (v2.x) upgrade automatically, one way, on first open.

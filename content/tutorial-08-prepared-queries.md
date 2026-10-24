@@ -214,6 +214,8 @@ const mid = JSON.parse(pq.execute({ max: 1000 })).results;
 
 A boolean, a string, `null`, a `bigint` and a `number` bind as values; a `number` is an integer when `Number.isInteger` accepts it and a float otherwise. The other kinds use a `{ type, value }` object: `{ type: 'float', value: 2 }` for a float with no fractional part, `'keyword'`, `'ref'`, `{ type: 'entity', value: uuid }` for an entity slot, `{ type: 'txCount', value: 50 }` or `{ type: 'timestamp', value: Date.now() }` for `:as-of`, and `{ type: 'anyValidTime' }` for `:valid-at`. `pq.query(bindings)` returns a cursor, as `db.query()` does.
 
+A set binds as `{ type: 'set', value: [...] }` or a JS `Set`, for the [set predicates](datalog-reference#sets) or a set-valued attribute. Its elements are plain or typed values, so a keyword element is written typed: `pq.execute({ roles: new Set([{ type: 'keyword', value: ':role/admin' }]) })`. An element in an entity, tx count, timestamp or any-valid-time form is `API-017`, a set inside a set `API-021`, and a plain array is not a set.
+
 ## In the other bindings
 
 Every binding has the same prepared queries: `prepare(text)` once, then `execute(bindings)` for the JSON result or `query(bindings)` for a cursor. Plain host values bind as values (booleans, integers, floats, strings, null), a UUID type binds an entity, and a typed bind value covers the other kinds.
