@@ -998,6 +998,21 @@ No database lock is held while a user function runs, so a function may call back
 | A nested query that calls another user function | Runs | `INT-001` (the nested query is refused) |
 
 Before v3.0.0 a user function that registered a function, or that ran a checkpoint inside a write transaction, deadlocked.
+
+### In the Browser
+
+`BrowserDb.registerPredicate(name, fn)` and `BrowserDb.registerAggregate(name, { init, step, finish })` register JavaScript functions, synchronously. Each value arrives as a `{ type, value }` object: `type` is `'string'`, `'integer'` (`value` a `bigint`), `'float'`, `'boolean'`, `'ref'` (an entity UUID string), `'keyword'`, `'null'` (no `value`) or `'set'` (`value` an array of these). A predicate returns a boolean. `init()` returns an accumulator, `step(acc, value)` returns the next one, and `finish(acc, count)` returns the result as a plain value or a `{ type, value }` form, as a prepared query's binding takes it. The three are called with no `this`.
+
+```javascript
+db.registerPredicate('adult?', (v) => v.type === 'integer' && v.value >= 18n);
+db.registerAggregate('product', {
+  init: () => 1n,
+  step: (acc, v) => acc * v.value,
+  finish: (acc) => ({ type: 'integer', value: acc }),
+});
+```
+
+A function that throws fails the query with `QRY-014` and the error's `message` (else `String(e)`), and so does a predicate that returns anything but a boolean, or a `finish` result that is not a value. From inside a function, `query`, `prepare` and the `register*` methods run at once; `execute`, `checkpoint` and `importGraph` return a promise that starts only after the outer query has returned. See [the browser section](use-cases#user-functions) of the use cases.
 <!-- @end -->
 
 ---
