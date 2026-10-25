@@ -517,6 +517,26 @@ try {
 `cursor.vars()` returns the `:find` variables. Only queries are accepted: `transact`, `retract` and `rule` throw `API-012`, and a query with `$slot` bind slots throws `API-010`.
 
 <!-- @end -->
+<!-- @since v3.0.0 -->
+#### User functions
+
+Register JavaScript predicates and aggregates, then use them in queries as you would the Rust ones ([reference](datalog-reference#in-the-browser)):
+
+```javascript
+db.registerPredicate('adult?', (v) => v.type === 'integer' && v.value >= 18n);
+db.registerAggregate('product', {
+  init: () => 1n,
+  step: (acc, v) => acc * v.value,
+  finish: (acc) => ({ type: 'integer', value: acc }),
+});
+
+await db.execute('(query [:find ?name :where [?e :person/age ?a] [(adult? ?a)] [?e :person/name ?name]])');
+await db.execute('(query [:find (product ?a) :where [?e :person/age ?a]])');
+```
+
+Values arrive as `{ type, value }` objects (an integer's `value` is a `bigint`). A function that throws fails the query with `QRY-014`.
+
+<!-- @end -->
 #### Checkpoint and portability
 
 `execute()` flushes dirty pages automatically. Call `checkpoint()` explicitly only after `importGraph()` or large bulk operations:
