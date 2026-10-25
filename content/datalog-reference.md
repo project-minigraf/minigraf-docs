@@ -371,9 +371,10 @@ Retraction records a new fact with `asserted = false`. The original fact remains
 
 A query vector is a run of sections, each a keyword and what follows it: `:find` and its
 specs, `:where` and its clauses, `:with` and its variables, and the options `:as-of`,
-`:valid-at`, `:any-valid-time`, `:max-derived-facts` and `:max-results` with their
-arguments. Sections come in any order. A section with nothing in it fails with `PRS-112`,
-a keyword the query does not know (such as `:limit`) with `PRS-113`, and a value after an
+`:valid-at`, `:any-valid-time`, `:max-derived-facts`, `:max-results`, `:order-by`,
+`:limit` and `:offset` with their arguments. Sections come in any order. A section with
+nothing in it fails with `PRS-112`, a keyword the query does not know (such as `:foo`)
+with `PRS-113`, and a value after an
 option's argument with `PRS-061`: write `[:find ?a ?b :any-valid-time :where …]`, not
 `[:find ?a :any-valid-time ?b :where …]`.
 
@@ -425,6 +426,56 @@ The keyword-or-ref rule applies to the top-level `:where` of a query; `or` branc
 
 ---
 
+<!-- @since v3.0.0 -->
+## Ordering and limiting results
+
+```datalog
+;; The ten people with the most friends, most first
+(query [:find ?name (count ?f)
+        :where [?p :person/name ?name] [?p :friend ?f]
+        :order-by [(count ?f) :desc ?name]
+        :limit 10])
+
+;; The third page of ten, by name
+(query [:find ?name ?age
+        :where [?p :person/name ?name] [?p :person/age ?age]
+        :order-by [?name]
+        :offset 20
+        :limit 10])
+```
+
+- `:order-by [k …]` orders the rows the query returns. Each entry is a `:find` element,
+  a plain variable or an aggregate or window written as it appears in `:find`, optionally
+  followed by `:asc` (the default) or `:desc`. Ties are broken by the other `:find`
+  columns, in `:find` order, ascending, so every position of an ordered answer is decided
+  and every plan returns the same list.
+- Values compare as window functions and `min`/`max` compare them: numbers by value (an
+  integer before an equal float, `-0.0` before `0.0`, NaN after every number), then
+  strings, booleans, refs, keywords, `nil` and sets.
+- `:limit N` returns at most `N` rows; `:limit 0` returns none. Without `:order-by`,
+  which rows is unspecified and may differ between runs and plans (they are always rows
+  of the whole answer), and the query stops reading once it has them: over ten million
+  facts, `[:find ?e ?v :where [?e :a ?v] :limit 10]` reads one internal batch.
+- `:offset N` skips the first `N` rows of the ordered answer, before `:limit`. It needs
+  `:order-by` (`PRS-116`): without an order, pages could overlap or miss rows. To read a
+  whole answer in pieces, use a cursor (`Minigraf::query`).
+- With `:order-by`, the query reads its whole answer before it returns a row. Under a
+  `:limit`, it keeps only the best `offset + limit` rows as it reads, so its memory
+  follows the limit, not the answer.
+- They apply after aggregates and windows, and to rule queries, cursors and prepared
+  queries: `:limit $n` and `:offset $o` take `BindValue::Val(Value::Integer(n))`, `n >= 0`.
+  They do not change `:max-derived-facts` or what rules derive.
+- Errors: a value that is not an integer `>= 0` or a slot is `PRS-115`; an `:order-by`
+  entry that is not a `:find` element is `PRS-117` (a variable bound in `:where` but not
+  in `:find` included); an `:order-by` that is not a non-empty vector, names an element
+  twice, or has a misplaced or unknown keyword is `PRS-118`; a section given twice is
+  `INT-012`, one with no value `INT-013`.
+
+Inside a window's `:over`, `:order-by` is the window's own and is unchanged.
+
+---
+
+<!-- @end -->
 ## Bi-temporal Queries
 
 Every fact has two time dimensions:
