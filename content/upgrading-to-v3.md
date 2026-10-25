@@ -43,6 +43,7 @@ Every code is described in the [error reference](error-reference).
 
 - `Minigraf::query()` and `PreparedQuery::query()` return a [cursor](datalog-reference#cursors); `BrowserDb.query()` returns a `BrowserCursor`.
 - `BrowserDb.prepare()` returns a [prepared query](tutorial-08-prepared-queries#in-the-browser), and so does `prepare()` in [every other binding](tutorial-08-prepared-queries#in-the-other-bindings). In Rust, `BindValue::Entity` and `BindValue::Val(Value::Ref(..))` now fit each other's slots.
+- Every binding registers [user functions](datalog-reference#in-the-other-bindings) written in its language (`register_predicate` / `register_aggregate`, `registerPredicate` / `registerAggregate`, `minigraf_register_predicate` / `minigraf_register_aggregate` in C), as does [`BrowserDb`](datalog-reference#in-the-browser). A callback that throws fails the query with `QRY-014`.
 - In Python, Java, Android and Swift, errors with an `API-` code (a bad argument, a closed object, a write to a read-only database, a bind mistake) are now `MiniGrafError.Api`, not `MiniGrafError.Other`. Code that caught `Other` for them must catch `Api`, and an exhaustive Kotlin `when` or Swift `switch` over `MiniGrafError` needs the new case.
 - `OpenOptions::read_only`, `Minigraf::fact_log()`, `LogWriter`, `Minigraf::verify()` and `Minigraf::rebuild_indexes()`: see [Reading, checking and copying databases](database-tools).
 

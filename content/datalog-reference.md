@@ -1013,6 +1013,57 @@ db.registerAggregate('product', {
 ```
 
 A function that throws fails the query with `QRY-014` and the error's `message` (else `String(e)`), and so does a predicate that returns anything but a boolean, or a `finish` result that is not a value. From inside a function, `query`, `prepare` and the `register*` methods run at once; `execute`, `checkpoint` and `importGraph` return a promise that starts only after the outer query has returned. See [the browser section](use-cases#user-functions) of the use cases.
+
+### In the other bindings
+
+Every binding registers predicates and aggregates written in its own language. A predicate is called as `[(name ?v)]`, and an aggregate is used as `(name ?v)` in `:find` or with `:over`; each group or window partition gets its own accumulator.
+
+```python
+class Adult(minigraf.Predicate):          # Python
+    def test(self, value):
+        return isinstance(value, minigraf.Value.INT64) and value.value >= 18
+
+db.register_predicate("adult?", Adult())
+db.register_aggregate("product", Product())  # Product.accumulator() returns a minigraf.Accumulator
+```
+
+```kotlin
+object Adult : MiniGrafPredicate {           // Kotlin (JVM and Android); Java implements the same interfaces
+    override fun test(value: MiniGrafValue) = value is MiniGrafValue.Int64 && value.value >= 18
+}
+db.registerPredicate("adult?", Adult)
+db.registerAggregate("product", Product)   // MiniGrafAggregate.accumulator() returns a MiniGrafAccumulator
+```
+
+```swift
+final class Adult: MiniGrafPredicate {       // Swift: the protocols are AnyObject, Sendable
+    func test(value: MiniGrafValue) throws -> Bool {
+        if case .int64(let age) = value { return age >= 18 }
+        return false
+    }
+}
+try db.registerPredicate(name: "adult?", predicate: Adult())
+```
+
+```js
+db.registerPredicate('adult?', (v) => v.type === 'integer' && v.value >= 18n)   // Node.js
+db.registerAggregate('product', { init: () => 1n, step: (acc, v) => acc * v.value, finish: (acc) => acc })
+```
+
+```c
+/* C: SQLite-style function pointer, user_data and destructor; values as JSON */
+minigraf_register_predicate(db, "adult?", adult, NULL, NULL);
+minigraf_register_aggregate(db, "product", product_new, product_step, product_finish,
+                            free, NULL, NULL);
+```
+
+- **Values.** Python, Java, Android and Swift pass a `MiniGrafValue` (`minigraf.Value` in Python) and `finish` returns one. Node.js passes a `FactValue` (`{ type, value }`, as in the browser) and reads `finish`'s result as a bind value. C passes the value as JSON text (`{"type":"integer","value":30}`) and takes the result through `minigraf_udf_result`.
+- **Failures.** A callback that throws (or, in C, returns -1) fails the query with `QRY-014`, raised as `MiniGrafError.Query` in the UniFFI bindings. Throw `MiniGrafUdfError.Failed(msg)` (`minigraf.UdfError.Failed` in Python) to choose the message; any other exception fails the call too, with its text as the message. Java, whose lambdas cannot throw that checked Kotlin exception, throws an unchecked one. Registering a name twice is `INT-040`; predicates and aggregates have separate names.
+- **Lifecycle.** The database keeps each function until it and every cursor and prepared query opened from it are released. There is no unregister. In C, `destroy(user_data)` runs then, and `acc_free(acc)` runs when the query drops an accumulator. A query sees the functions registered when it opened.
+- **Threading.** A callback runs on the thread that calls `execute` or a cursor's `next_batch`. In Python, Java, Android, Swift and C, queries on different threads may call the same object at once, so it must be thread-safe; Python's callback re-acquires the GIL. In Node.js a function runs on the JavaScript thread that registered it.
+- **Re-entry.** A callback may query its own database, open a cursor, write or register another function, with the [rules above](#registration-snapshots-and-re-entry); no binding lock is held while the core runs. Each call crosses the FFI once, so a function over many rows costs one call per value.
+
+Each binding's README has the full example and its language's details.
 <!-- @end -->
 
 ---
