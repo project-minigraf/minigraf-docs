@@ -372,7 +372,8 @@ Retraction records a new fact with `asserted = false`. The original fact remains
 A query vector is a run of sections, each a keyword and what follows it: `:find` and its
 specs, `:where` and its clauses, `:with` and its variables, and the options `:as-of`,
 `:valid-at`, `:any-valid-time`, `:max-derived-facts`, `:max-results`, `:order-by`,
-`:limit` and `:offset` with their arguments. Sections come in any order. A section with
+`:limit`, `:offset` and `:distinct`. `:any-valid-time` and `:distinct` are bare flags;
+the other options take arguments. Sections come in any order. A section with
 nothing in it fails with `PRS-112`, a keyword the query does not know (such as `:foo`)
 with `PRS-113`, and a value after an
 option's argument with `PRS-061`: write `[:find ?a ?b :any-valid-time :where …]`, not
@@ -382,6 +383,61 @@ option's argument with `PRS-061`: write `[:find ?a ?b :any-valid-time :where …
 ### Variables
 
 Variables start with `?`. They are unified across clauses — the same variable in two clauses constrains them to the same value.
+
+### Repeated result rows
+
+A query without aggregates returns one row per matching `:where` binding. Projecting
+away a variable can therefore repeat a `:find` tuple: if `:e1` has two `:c` values
+and `:e2` has one, `[:find ?e :where [?e :c ?v]]` returns three rows, including
+`:e1` twice. This bag default also applies when the bindings come from rules.
+`count-distinct` and `sum-distinct` apply to their aggregate argument only.
+
+<!-- @until v3.0.0 -->
+There is no option to remove repeated output rows. Deduplicate in the caller, or
+add an aggregate to group by the projected variables:
+
+```datalog
+(query [:find ?e (count ?v) :where [?e :c ?v]])
+```
+
+This returns one row per entity but adds a count column. `:with` changes aggregate
+grouping; it does not enable distinct output.
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
+### Distinct result rows
+
+Add the bare `:distinct` flag to return one row per unique final `:find` tuple:
+
+```datalog
+(query [:find ?e :where [?e :c ?v] :distinct])
+(query [:find ?v :where [?e :c ?v] :distinct :order-by [?v] :offset 1 :limit 10])
+```
+
+The flag takes no argument and can appear between complete query sections in any
+order. Repeating it is `INT-012`; writing `:distinct true`, `:distinct 1` or
+`:distinct $d` is `PRS-061`. Its grammar section is `distinct-section ::= ":distinct"`.
+
+Distinct runs **after aggregates and windows, before ordering and pagination**.
+It compares every output column, ignoring variables absent from `:find`. Aggregate
+inputs, window peers and ranks, and `:with` grouping stay the same. Equal output
+tuples from different `:with` groups or window partitions collapse. In particular,
+`row-number` restarts in each partition and can repeat if no other output column
+distinguishes the rows.
+
+Equality follows aggregate grouping: an integer differs from a float, floating
+zeros are equal, all NaNs are one value, and a keyword differs from a ref to its
+named entity. Sets compare by their elements. Returned float zeros use `-0.0` and
+NaNs use one canonical NaN, including inside sets, even for singleton results.
+This makes their representation independent of which binding arrives first.
+Without `:order-by`, the order of unique rows is unspecified.
+
+The engine retains a key for every unique tuple encountered, charged to
+`OpenOptions::query_memory_limit` (`QRY-012` when exceeded). This state spans cursor
+batches. With `:order-by` and `:limit`, the sort retains only its best rows, but distinct
+still retains all unique keys it encounters. Prepared queries, cursors and reads
+inside write transactions support the same flag. Omitting it keeps bag output.
+<!-- @end -->
 
 ### Where clauses
 
