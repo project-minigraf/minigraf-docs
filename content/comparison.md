@@ -79,6 +79,14 @@ Cozo is the closest Rust competitor. The key differentiators: Minigraf has a pro
 
 Datomic is the other major inspiration alongside XTDB. Minigraf borrows the EAV model, the four covering indexes (EAVT/AEVT/AVET/VAET), and the temporal query semantics. The positioning is complementary: Minigraf is for embedded use cases where Datomic cannot go.
 
+Minigraf returns repeated projected rows by default; Datomic's `:find` has set
+semantics. See [repeated result rows](datalog-reference#repeated-result-rows).
+
+<!-- @since v3.0.0 -->
+Minigraf's optional [`:distinct`](datalog-reference#distinct-result-rows) removes
+repeated final tuples while preserving the bag default.
+<!-- @end -->
+
 **Try it:** [See bi-temporal Datalog in your browser — no install needed →](https://minigraf-playground.vercel.app/)
 
 ---
