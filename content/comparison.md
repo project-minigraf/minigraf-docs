@@ -32,7 +32,7 @@ Minigraf's bindings are split into [support tiers](https://github.com/project-mi
 | **Bi-temporal** | ✅ Yes | ✅ Yes | ⚠️ Time travel | ❌ No | ❌ No |
 | **Embedded** | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No | ✅ Yes |
 | **Graph Native** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ❌ No |
-| **Window Functions** | ✅ Yes | ✅ Yes | ✅ Yes | ⚠️ Limited | ✅ Yes |
+| **Window Functions** | ✅ Yes; `lag`/`lead` (v3.0.0) | ✅ Yes | ✅ Yes | ⚠️ Limited | ✅ Yes |
 | **User-Defined Functions** | ✅ UDF aggregates + predicates (v0.17.0) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Prepared Statements** | ✅ `$slot` temporal bind tokens (v0.18.0) | ⚠️ Limited | ❌ No | ✅ Yes | ✅ Yes |
 | **Set values** | ✅ `#{...}` values, membership predicates, `collect-set` (v3.0.0) | ✅ Yes | ⚠️ Lists | ⚠️ Lists | ❌ No |
