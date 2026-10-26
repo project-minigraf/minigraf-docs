@@ -146,6 +146,18 @@ Mobile data is inherently eventually consistent. A user records a fact offline, 
 ;; => 80.5
 ```
 
+<!-- @since v3.0.0 -->
+For a series of measurements modeled as separate reading entities, `lag` puts the previous reading's weight next to each reading for the same user. The first reading per user gets `nil`:
+
+```datalog
+(query [:find ?reading ?user ?measured ?weight
+              (lag ?weight :over (:partition-by ?user :order-by ?measured))
+        :where [?reading :health/user ?user]
+               [?reading :health/measured-at ?measured]
+               [?reading :health/weight-kg ?weight]])
+```
+<!-- @end -->
+
 ### Use cases
 
 - **Health and fitness tracking** — Weight, nutrition, exercise logs with retroactive corrections

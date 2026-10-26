@@ -205,12 +205,23 @@ A `:find` variable that no `:where` clause binds is not rejected: the query retu
 
 ### Window function compatibility
 
+<!-- @until v3.0.0 -->
 | Function | Requires `:over` | Allowed without `:over` |
 |----------|-----------------|------------------------|
 | `avg`, `rank`, `row-number` | Yes | No |
 | `count-distinct`, `sum-distinct` | No | Yes (not window-compatible) |
 | `count`, `sum`, `min`, `max` | Optional | Yes |
 | UDF names | Optional | Yes (runtime-resolved) |
+<!-- @end -->
+<!-- @since v3.0.0 -->
+| Function | Requires `:over` | Allowed without `:over` |
+|----------|-----------------|------------------------|
+| `avg`, `rank`, `row-number` | Yes | No |
+| `count-distinct`, `sum-distinct` | No | Yes (not window-compatible) |
+| `count`, `sum`, `min`, `max` | Optional | Yes |
+| UDF names | Optional | Yes (runtime-resolved) |
+| `lag`, `lead` | Yes as built-ins | Yes when registered as UDF aggregates |
+<!-- @end -->
 
 ### UUID and timestamp validation
 
@@ -875,7 +886,12 @@ Window functions appear in the `:find` clause as `(func ?v :over (...))`. They a
 | `rank :over (…)` | none | Rank within partition (ties share rank, next rank skips) |
 | `row-number :over (…)` | none | Sequential 1-based row number within partition |
 
+<!-- @until v3.0.0 -->
 `lag` and `lead` are not supported in this version.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+`lag` and `lead` are also supported. `(lag ?v :over (:order-by ?o))` reads `?v` from the immediately preceding row in the ordered partition; `lead` reads the next row. Both require a value argument and return `nil` at a partition edge. They accept the same optional `:partition-by ?p` and `:desc` modifiers. There is no offset or explicit default argument in v3.0.0. Without `:over`, `(lag ?v)` and `(lead ?v)` remain names a user may register as ordinary aggregates. With `:over`, the built-in runs even if a user aggregate has the same name.
+<!-- @end -->
 
 <!-- @until v3.0.0 -->
 Frame semantics: all window functions use **unbounded-preceding** (accumulate from the first row in the partition up to and including the current row). Sliding frames (`:rows N preceding`) are deferred to a future release.
@@ -893,12 +909,25 @@ Rows with equal `:order-by` values are **peers**:
 - `rank` gives peers the same rank; the next rank skips.
 - `sum`, `count`, `min`, `max`, `avg` and custom window functions accumulate from the first row of the partition through the **last peer** of the current row, so peers get the same value (SQL's default frame). With `?s` of 1.5, 5, 10, 10, `(sum ?s :over (:order-by ?s))` gives 1.5, 6.5, 26.5, 26.5.
 - `row-number` gives each peer its own number, in the order of the other variables `:find` names; peers equal in all of them are identical rows, so which gets which number does not show in the answer.
+- `lag` and `lead` use that same row order, including the tie break. They read adjacent rows, even when those rows are peers. With `:desc`, the row `lag` reads has a higher or equal order key. A neighboring `nil` value also yields `nil`.
 
-The answer is the same on every query plan. Sliding frames (`:rows N preceding`, [#183](https://github.com/project-minigraf/minigraf/issues/183)) and `lag` / `lead` ([#182](https://github.com/project-minigraf/minigraf/issues/182)) are planned for v3.1.0.
+The answer is the same on every query plan. Sliding frames (`:rows N preceding`, [#183](https://github.com/project-minigraf/minigraf/issues/183)) are planned for a later release.
 
 <!-- @end -->
 
 ### Examples
+
+<!-- @since v3.0.0 -->
+```datalog
+;; Previous and next salary in each department, ordered by hire date.
+(query [:find ?e ?dept ?hire ?salary
+              (lag ?salary :over (:partition-by ?dept :order-by ?hire))
+              (lead ?salary :over (:partition-by ?dept :order-by ?hire))
+        :where [?e :employee/dept ?dept]
+               [?e :employee/salary ?salary]
+               [?e :employee/hire-date ?hire]])
+```
+<!-- @end -->
 
 ```datalog
 ;; Cumulative salary sum ordered by hire date, partitioned by department
@@ -947,6 +976,9 @@ A window variable that is not a plain `:find` variable reads `nil` on every grou
 <!-- @end -->
 - `rank` / `row-number`: always return `Integer`.
 - `count`: always returns `Integer`, counts non-null rows only.
+<!-- @since v3.0.0 -->
+- `lag` / `lead`: return the adjacent row's value, of any type, or `nil` at a partition edge.
+<!-- @end -->
 
 ---
 
@@ -995,6 +1027,10 @@ Custom aggregates also work in `:over` window clauses:
         :where [?e :employee/dept ?dept]
                [?e :employee/score ?score]])
 ```
+
+<!-- @since v3.0.0 -->
+The names `lag` and `lead` are exceptions in a window clause: `:over` selects the built-in even if a custom aggregate with that name is registered. Their plain aggregate forms still call the registered function.
+<!-- @end -->
 
 ### Custom Predicate Functions
 
