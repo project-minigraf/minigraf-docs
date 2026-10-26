@@ -393,6 +393,12 @@ Each clause is `[entity attribute value]`. Any position can be a variable, a lit
 [?e :person/age 30]          ;; find all entities aged 30
 ```
 
+<!-- @range v2.0.11..v3.0.0 -->
+A float literal passed to a rule compares by IEEE `==`: `(xval ?e 0.0)` returns
+both `0.0` and `-0.0` rows in every run
+([#750](https://github.com/project-minigraf/minigraf/issues/750)).
+<!-- @end -->
+
 <!-- @since v3.0.0 -->
 ### Join rules
 

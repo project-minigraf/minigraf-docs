@@ -477,6 +477,13 @@ existing handle is always the right move (#304).
 
 ## Thread Safety
 
+<!-- @since v2.0.11 -->
+Calling `checkpoint`, `prepare` or `PreparedQuery::execute` on a thread holding a
+`WriteTransaction` returns `INT-001`; commit or roll back the transaction first.
+The transaction stays usable after the refused call
+([#734](https://github.com/project-minigraf/minigraf/issues/734)).
+<!-- @end -->
+
 - Concurrent reads via `Arc<RwLock<FactStorage>>`
 - Exclusive write via `Mutex<WriteTransaction>`
 - One live handle per file per process, enforced by the kernel file lock (see File Locking above)
