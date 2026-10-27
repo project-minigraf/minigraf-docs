@@ -68,7 +68,7 @@ src/
 │   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
 │   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
 ├── query/datalog/              — parser, executor (transact/retract/rule commands; opens every query on the engine), matcher (EDN → value), evaluator (rule limits), aggregate (accumulators and window values the engine uses), stratification, rules, functions, optimizer, prepared, magic_sets, types; the optimizer reorders on every build, the `wasm` feature is a deprecated no-op
-├── query/engine/               — streaming query engine, which runs every query: plan (the operator tree of a query), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), anti (`not` / `not-join`, hashed or per row from a seed), union and distinct (`or` / `or-join`, plus optional `:distinct` final tuples after aggregates/windows and before sorting/pagination), aggregate, window, relation and recursive (rules), meter (query memory), project (ids → values), cells, batches and ids
+├── query/engine/               — streaming query engine, which runs every query: plan (the operator tree of a query), scan (one pattern over key ranges), join (index nested-loop and hash joins), filter (expressions, pseudo-attributes), anti (`not` / `not-join`, hashed or per row from a seed), union and distinct (`or` / `or-join`, plus optional `:distinct` final tuples after aggregates/windows and before sorting/pagination), aggregate, window, relation and recursive (rules), meter (query memory), project (ids → values using bounded UUID batch hints), cells, batches and ids
 └── storage/
     ├── mod.rs                  — StorageBackend trait, CommittedReader trait, LegacyHeaderV7 (v7 migration only)
     ├── persistent_facts.rs     — PersistentFactStorage: v8 save/load, copy-on-write checkpoint, v7 → v8 migration
@@ -77,8 +77,8 @@ src/
     ├── freelist.rs             — free-list chain of reusable pages
     ├── keys.rs                 — byte-comparable keys: FDB integers, value tags, tx↓, FOREVER; MAX_VALUE_BYTES, MAX_IDENT_BYTES
     ├── node.rs                 — prefix-compressed leaves and shortest-separator internal nodes
-    ├── btree.rs                — on-disk B+tree over byte keys: build_btree, cow_insert, LeafCursor (seek, prefix_scan, get)
-    ├── dict.rs                 — DICT tree: entity and ident ids, tx timestamps, long values; checkpoint-time Encoder
+    ├── btree.rs                — on-disk B+tree over byte keys: build_btree, cow_insert, LeafCursor (seek, prefix_scan), get, get_many (exact lookups sharing tree paths)
+    ├── dict.rs                 — DICT tree: entity and ident ids, tx timestamps, long values; batched UUID resolution from the pinned dictionary; checkpoint-time Encoder
     ├── value_pages.rs          — append-only pages for strings over 64 bytes
     ├── reader.rs               — OnDiskReader: covering reads of committed facts; net-assert on index keys
     ├── verify.rs               — integrity walk for Minigraf::verify and the source choice for rebuild_indexes
