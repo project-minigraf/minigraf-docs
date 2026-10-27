@@ -911,8 +911,31 @@ Rows with equal `:order-by` values are **peers**:
 - `row-number` gives each peer its own number, in the order of the other variables `:find` names; peers equal in all of them are identical rows, so which gets which number does not show in the answer.
 - `lag` and `lead` use that same row order, including the tie break. They read adjacent rows, even when those rows are peers. With `:desc`, the row `lag` reads has a higher or equal order key. A neighboring `nil` value also yields `nil`.
 
-The answer is the same on every query plan. Sliding frames (`:rows N preceding`, [#183](https://github.com/project-minigraf/minigraf/issues/183)) are planned for a later release.
+The answer is the same on every query plan.
 
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
+#### Bounded row frames
+
+Add `:rows N preceding` inside `:over` to include the current row and at most `N` preceding **physical rows** in the sorted partition. `N` is a nonnegative integer literal up to 9223372036854775807. `:rows 0 preceding` uses only the current row. Frames truncate at the start of a partition and reset for each partition. `:rows` and the other `:over` options can appear in any order.
+
+```datalog
+(avg ?v :over (:partition-by ?p :order-by ?o :rows 2 preceding))
+```
+
+Unlike the default peer frame, a bounded frame treats rows with equal `:order-by` values as separate positions. The existing tie break by named `:find` variables decides their order, including for `:desc`. `sum`, `count`, `min`, `max`, `avg`, and registered aggregate functions accept a bounded frame. `rank`, `row-number`, `lag`, and `lead` reject one with `PRS-125`; malformed or repeated frame options return `PRS-124`.
+
+```datalog
+;; Each employee's salary and average of their salary plus up to two earlier hires.
+(query [:find ?e ?dept ?hire ?salary
+              (avg ?salary :over (:partition-by ?dept :order-by ?hire :rows 2 preceding))
+        :where [?e :employee/dept ?dept]
+               [?e :employee/salary ?salary]
+               [?e :employee/hire-date ?hire]])
+```
+
+Rows with `nil` or nonnumeric values still occupy positions. `count` skips `nil`; `sum` and `avg` skip nonnumbers; `min` and `max` skip `nil`. A registered aggregate receives every value, including `nil`. Built-in bounded windows run in linear time after sorting. Registered aggregates without an inverse replay each frame, taking up to `O(R × min(N + 1, R))` steps for `R` rows in a partition; a frame covering the whole prefix uses a linear running accumulator. Large middle-sized frames can invoke the user function many times. The engine memory limit accounts for retained window results and built-in state, but cannot account for memory allocated inside a user function.
 <!-- @end -->
 
 ### Examples

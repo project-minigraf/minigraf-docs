@@ -158,6 +158,18 @@ For a series of measurements modeled as separate reading entities, `lag` puts th
 ```
 <!-- @end -->
 
+<!-- @since v3.0.0 -->
+For a moving average of the current and up to two prior readings per user, use a bounded row frame. Readings with the same measurement time are separate rows in a deterministic order:
+
+```datalog
+(query [:find ?reading ?user ?measured ?weight
+              (avg ?weight :over (:partition-by ?user :order-by ?measured :rows 2 preceding))
+        :where [?reading :health/user ?user]
+               [?reading :health/measured-at ?measured]
+               [?reading :health/weight-kg ?weight]])
+```
+<!-- @end -->
+
 ### Use cases
 
 - **Health and fitness tracking** — Weight, nutrition, exercise logs with retroactive corrections
