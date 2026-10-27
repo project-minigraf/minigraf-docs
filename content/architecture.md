@@ -77,8 +77,8 @@ src/
     ├── freelist.rs             — free-list chain of reusable pages
     ├── keys.rs                 — byte-comparable keys: FDB integers, value tags, tx↓, FOREVER; MAX_VALUE_BYTES, MAX_IDENT_BYTES
     ├── node.rs                 — prefix-compressed leaves and shortest-separator internal nodes
-    ├── btree.rs                — on-disk B+tree over byte keys: build_btree, cow_insert, LeafCursor (seek, prefix_scan), get, get_many (exact lookups sharing tree paths)
-    ├── dict.rs                 — DICT tree: entity and ident ids, tx timestamps, long values; batched UUID resolution from the pinned dictionary; checkpoint-time Encoder
+    ├── btree.rs                — on-disk B+tree over byte keys: build_btree, cow_insert, LeafCursor (seek), prefix_scan, get
+    ├── dict.rs                 — DICT tree: entity and ident ids, tx timestamps, long values; batched UUID resolution from the pinned dictionary (dense leaf walks, sparse/small exact reads); checkpoint-time Encoder
     ├── value_pages.rs          — append-only pages for strings over 64 bytes
     ├── reader.rs               — OnDiskReader: covering reads of committed facts; net-assert on index keys
     ├── verify.rs               — integrity walk for Minigraf::verify and the source choice for rebuild_indexes
