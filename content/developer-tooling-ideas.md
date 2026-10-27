@@ -1025,6 +1025,176 @@ The meaning of old facts still needs care when the code changes, for example whe
 - Rules are not stored in the file yet ([#241](https://github.com/project-minigraf/minigraf/issues/241)), so the actor registers them each time it opens the file.
 - When a guard fails, the query returns nothing and says nothing about why.
 
+## Sync debugger
+
+Record every CRDT operation a replica receives, and what the replica showed after each merge. Store each replica in its own Minigraf file. Then ask what a replica knew when a user saw a value, which operations were still on the way, and which deleted data every replica has seen.
+
+Minigraf does not merge or sync anything here. A CRDT library such as Automerge or Yjs does the merge. Minigraf sits next to it, records each operation as it arrives, and answers questions about the merge later. This is the same pattern as [actor state](#actor-state): one writer per file, and the file is a view you can query.
+
+**The problem it solves.** A user on replica B sees the title "Draft" at 10:05. Another user on replica C wrote "Final" at 10:01. Is this a merge bug, or a late sync? A CRDT library shows the merged state. It does not show when each operation reached each replica. With both time axes, the answer is two queries: C's write reached B after 10:05, and B then picked "Final". The merge was correct. The sync was late.
+
+**Questions it answers**
+
+- When replica B showed this value, which operations had it seen?
+- Which operations were written before then, but had not reached B yet?
+- Which operations on the same key are concurrent with this one?
+- Which deletes has every replica seen, so their tombstones are safe to drop?
+
+**Why Minigraf fits.**
+
+- **Valid time** is when an operation was made on the replica that made it.
+- **Transaction time** is when this replica received it.
+- The gap between the two is the sync delay. Most CRDT tools keep only the first.
+- Causal order is a graph. "Did A happen before B, directly or through a chain?" is a recursive rule. Two operations are concurrent when neither rule matches.
+- A tombstone is safe to drop when every replica has seen it. "Every replica" is a negation over the replicas still waiting, which `not-join` handles.
+- The CRDT library applies an operation and updates its view in one step. Minigraf records both in one ACID transaction, so a crash never leaves half a merge in the file.
+
+**Schema sketch.** This file belongs to replica B. An operation carries `:op/id`, `:op/origin` (the replica that made it), `:op/seq` (its number on that replica), `:op/key`, `:op/kind` and `:op/value`. `:op/after` links an operation to an earlier operation its origin had seen when it made it. `:view/value` is what B showed after each merge. An ack carries `:ack/replica`, `:ack/origin` and `:ack/next`: the replica has seen every operation from that origin below `:ack/next`. Acks are only ever added, never changed. The blocks in this section run in one session, in order.
+
+```datalog
+;; Transaction 1: the replicas
+(transact [[:r-a :replica/name "A"]
+           [:r-b :replica/name "B"]
+           [:r-c :replica/name "C"]])
+
+;; Transaction 2: A's write reaches B. B shows "Draft".
+(transact {:valid-from "2026-10-01T10:00:00Z"}
+          [[:op-a1 :op/id "A:1"]
+           [:op-a1 :op/origin :r-a]
+           [:op-a1 :op/seq 1]
+           [:op-a1 :op/key "doc-9/title"]
+           [:op-a1 :op/kind "set"]
+           [:op-a1 :op/value "Draft"]
+           [:view-title :view/value "Draft" {:valid-from "2026-10-01T10:00:02Z"}]])
+
+;; Transactions 3 and 4: C's write, made at 10:01, reaches B late.
+;; Last writer wins, so B now shows "Final".
+(retract [[:view-title :view/value "Draft"]])
+(transact {:valid-from "2026-10-01T10:01:00Z"}
+          [[:op-c1 :op/id "C:1"]
+           [:op-c1 :op/origin :r-c]
+           [:op-c1 :op/seq 1]
+           [:op-c1 :op/key "doc-9/title"]
+           [:op-c1 :op/kind "set"]
+           [:op-c1 :op/value "Final"]
+           [:view-title :view/value "Final" {:valid-from "2026-10-01T10:06:00Z"}]])
+
+;; Transactions 5 and 6: A deletes the title after it has seen C's write.
+(retract [[:view-title :view/value "Final"]])
+(transact {:valid-from "2026-10-01T10:10:00Z"}
+          [[:op-a2 :op/id "A:2"]
+           [:op-a2 :op/origin :r-a]
+           [:op-a2 :op/seq 2]
+           [:op-a2 :op/key "doc-9/title"]
+           [:op-a2 :op/kind "delete"]
+           [:op-a2 :op/after :op-c1]])
+```
+
+First, the user's question. What had B seen at 10:05, and what had been written by then?
+
+```datalog
+;; What B had received by transaction 2, for 10:05
+(query [:find ?id ?value
+        :as-of 2
+        :valid-at "2026-10-01T10:05:00Z"
+        :where [?op :op/key "doc-9/title"]
+               [?op :op/id ?id]
+               [?op :op/value ?value]])
+;; => "A:1" "Draft"
+
+;; What had been written by 10:05, as B knows now
+(query [:find ?id ?value
+        :valid-at "2026-10-01T10:05:00Z"
+        :where [?op :op/key "doc-9/title"]
+               [?op :op/id ?id]
+               [?op :op/value ?value]])
+;; => "A:1" "Draft", "C:1" "Final"
+
+;; What B showed, before and after C's write arrived
+(query [:find ?v :as-of 2 :where [:view-title :view/value ?v]])
+;; => "Draft"
+(query [:find ?v :as-of 4 :where [:view-title :view/value ?v]])
+;; => "Final"
+```
+
+C:1 is in the second answer but not the first. It was written before 10:05 and reached B after. That is a late sync, not a merge bug.
+
+Next, causal order. Which operations on the same key could the merge not order by cause?
+
+```datalog
+(rule [(before ?a ?b) [?b :op/after ?a]])
+(rule [(before ?a ?b) [?b :op/after ?m] (before ?a ?m)])
+
+;; Operations on the same key that are concurrent with C:1
+(query [:find ?id
+        :where [?x :op/id "C:1"]
+               [?x :op/key ?k]
+               [?o :op/key ?k]
+               [(!= ?o ?x)]
+               (not-join [?o ?x] (before ?o ?x))
+               (not-join [?o ?x] (before ?x ?o))
+               [?o :op/id ?id]])
+;; => "A:1"
+```
+
+A:2 is not listed. It came after C:1, because A had seen C:1 when it made the delete. A:1 and C:1 are concurrent, so the merge rule (here, last writer wins) picked between them.
+
+Last, cleanup. A delete leaves a tombstone. The tombstone is safe to drop only when every replica has seen the delete.
+
+```datalog
+;; Transaction 7: B learns what each replica has seen from A
+(transact [[:ack-1 :ack/replica :r-a]
+           [:ack-1 :ack/origin :r-a]
+           [:ack-1 :ack/next 3]
+           [:ack-2 :ack/replica :r-b]
+           [:ack-2 :ack/origin :r-a]
+           [:ack-2 :ack/next 3]
+           [:ack-3 :ack/replica :r-c]
+           [:ack-3 :ack/origin :r-a]
+           [:ack-3 :ack/next 2]])
+
+(rule [(acked ?r ?op)
+       [?op :op/origin ?o] [?op :op/seq ?s]
+       [?k :ack/replica ?r] [?k :ack/origin ?o] [?k :ack/next ?n]
+       [(< ?s ?n)]])
+(rule [(waiting ?op ?r)
+       [?op :op/seq _] [?r :replica/name _]
+       (not-join [?r ?op] (acked ?r ?op))])
+
+;; Deletes that some replica has not seen yet
+(query [:find ?id ?replica
+        :where [?op :op/kind "delete"]
+               (waiting ?op ?r)
+               [?op :op/id ?id]
+               [?r :replica/name ?replica]])
+;; => "A:2" "C"
+
+;; Transaction 8: C catches up
+(transact [[:ack-4 :ack/replica :r-c]
+           [:ack-4 :ack/origin :r-a]
+           [:ack-4 :ack/next 3]])
+
+;; Tombstones safe to drop
+(query [:find ?id
+        :where [?op :op/kind "delete"]
+               (not-join [?op] (waiting ?op ?r))
+               [?op :op/id ?id]])
+;; => "A:2"
+```
+
+Acks also arrive late. B learns what C has seen only when C syncs with it. The ack's transaction time records when B learned it, so you can ask why a tombstone stayed so long.
+
+**Precedents.** Automerge keeps the full history of a document and can show it at any past point. Yjs can take snapshots, but drops deleted content by default. Neither records when each operation reached each replica, and neither answers questions across many documents. That second time axis is the gain here.
+
+**Limits.**
+
+- Minigraf does not merge, sync or resolve conflicts. The CRDT library does all of that.
+- Text editing makes one operation per keystroke. Store the library's change batches (Automerge changes, Yjs updates), not single characters.
+- Valid time comes from the clock on the replica that made the operation. Clocks drift. Use a hybrid logical clock, and use `:op/after` for causal order, never valid time.
+- Each replica has its own file. A question across replicas means reading several files, so it happens in the tool, not in one query.
+- The cleanup check is only as good as the acks this replica has. A replica that leaves for good must be removed from the replica list, and all replicas must agree on that. That step needs coordination.
+- Derive entity ids from the origin and sequence number (`:op-a1` for A:1). Then a file rebuilt from the sync log gets the same ids.
+
 ## Verification results
 
 Formal verifiers such as Verus, Creusot, Kani and Dafny prove properties of code for every input. Most of them keep nothing between runs, or keep only a cache keyed by a hash of each proof obligation. A key-value file does that job well. What gets thrown away is the history:
