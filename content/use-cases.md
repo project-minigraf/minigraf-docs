@@ -158,7 +158,7 @@ For a series of measurements modeled as separate reading entities, `lag` puts th
 ```
 <!-- @end -->
 
-<!-- @since v3.1.0 -->
+<!-- @since v3.0.0 -->
 For a moving average of the current and up to two prior readings per user, use a bounded row frame. Readings with the same measurement time are separate rows in a deterministic order:
 
 ```datalog

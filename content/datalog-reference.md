@@ -913,13 +913,9 @@ Rows with equal `:order-by` values are **peers**:
 
 The answer is the same on every query plan.
 
-<!-- @until v3.1.0 -->
-Sliding frames (`:rows N preceding`, [#183](https://github.com/project-minigraf/minigraf/issues/183)) are planned for a later release.
 <!-- @end -->
 
-<!-- @end -->
-
-<!-- @since v3.1.0 -->
+<!-- @since v3.0.0 -->
 #### Bounded row frames
 
 Add `:rows N preceding` inside `:over` to include the current row and at most `N` preceding **physical rows** in the sorted partition. `N` is a nonnegative integer literal up to 9223372036854775807. `:rows 0 preceding` uses only the current row. Frames truncate at the start of a partition and reset for each partition. `:rows` and the other `:over` options can appear in any order.

@@ -45,7 +45,7 @@ Minigraf's bindings are split into [support tiers](https://github.com/project-mi
 Minigraf's bindings are split into [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
 <!-- @end -->
 
-<!-- @since v3.1.0 -->
+<!-- @since v3.0.0 -->
 Minigraf window aggregates also support bounded `:rows N preceding` frames, including registered aggregate functions. Built-in framed aggregates use linear evaluation after sorting; registered aggregates replay each bounded frame unless it covers the whole prefix.
 <!-- @end -->
 
