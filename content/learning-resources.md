@@ -14,9 +14,9 @@ order: 70
 
 ## Datalog — Further Reading
 
-- [Learn Datalog Today](http://www.learndatalogtoday.org/) — interactive tutorial, browser-based exercises
-- [Datomic Query Tutorial](https://docs.datomic.com/query/query-tutorial.html) — Datomic's Datalog dialect; most concepts transfer directly to Minigraf
-- [XTDB Datalog Queries](https://xtdb.com/docs/) — XTDB's Datalog reference; the temporal query semantics closely match Minigraf's
+- [Learn Datalog (XTDB)](https://v1-docs.xtdb.com/tutorials/learn-datalog/) — XTDB's version of the classic Learn Datalog Today tutorial, with exercises
+- [Datomic Query Reference](https://docs.datomic.com/query/query-data-reference.html) — Datomic's Datalog dialect; most concepts transfer directly to Minigraf
+- [XTDB 1.x Datalog Queries](https://v1-docs.xtdb.com/language-reference/datalog-queries/) — XTDB's Datalog reference; the temporal query semantics closely match Minigraf's
 
 ## Temporal Databases
 
