@@ -532,9 +532,13 @@ The keyword-or-ref rule applies to the top-level `:where` of a query; `or` branc
 - `:offset N` skips the first `N` rows of the ordered answer, before `:limit`. It needs
   `:order-by` (`PRS-116`): without an order, pages could overlap or miss rows. To read a
   whole answer in pieces, use a cursor (`Minigraf::query`).
-- With `:order-by`, the query reads its whole answer before it returns a row. Under a
-  `:limit`, it keeps only the best `offset + limit` rows as it reads, so its memory
-  follows the limit, not the answer.
+- With `:order-by`, the query normally reads its whole answer before it returns a row.
+  Under a `:limit`, it keeps only the best `offset + limit` rows as it reads, so its
+  memory follows the limit, not the answer. A committed scalar range can skip sorting
+  when the index proves the complete ascending order: for example,
+  `[:find ?v :where [?e :score ?v] :order-by [?v] :limit 10]` can stop early when
+  `:score`'s committed history has one value kind (integer, float, or Boolean) and that range
+  has no pending writes. Mixed kinds, unproved tie columns and user callbacks keep the normal sort.
 - They apply after aggregates and windows, and to rule queries, cursors and prepared
   queries: `:limit $n` and `:offset $o` take `BindValue::Val(Value::Integer(n))`, `n >= 0`.
   They do not change `:max-derived-facts` or what rules derive.
