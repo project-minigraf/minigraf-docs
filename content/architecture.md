@@ -49,6 +49,12 @@ src/
 ```
 <!-- @end -->
 <!-- @since v3.0.0 -->
+Ordinary and window aggregates share exact numeric summation and the total
+value comparator. Ordinary sum/sum-distinct skip nonnumbers, and min/max
+compare every non-nil type. Distinct sum filters before retaining and charging
+members; count-distinct retains all non-nil types. The ordered-group strategy
+remains restricted to count/count-distinct; other aggregates drain their input.
+
 ```
 src/
 ├── main.rs                     — binary entry point (interactive REPL)

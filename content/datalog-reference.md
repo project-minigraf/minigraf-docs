@@ -820,7 +820,7 @@ Scalar aggregates appear in the `:find` clause as `(func ?var)`. All aggregates 
         :where [?e :dept ?dept]
                [?e :salary ?salary]])
 
-;; min / max — works on Integer, Float, and String
+;; min / max — least / greatest timestamp
 (query [:find (min ?ts)
         :where [?e :event/timestamp ?ts]])
 ```
@@ -865,8 +865,39 @@ A query containing `avg` also returns no rows when nothing matches, even alongsi
 - `avg`: Float for any numeric population; nil for an existing group without numbers. Skip nil and nonnumeric arguments.
 <!-- @end -->
 
+<!-- @until v3.0.0 -->
 - `sum` / `sum-distinct`: Integer inputs → Integer result; any Float input → Float result (widening). Non-numeric, non-null values → runtime error.
 - `min` / `max`: Comparable types (Integer, Float, String). Mixing Integer and Float → runtime error. Non-comparable types (Boolean, Ref, Keyword) → runtime error.
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
+- `sum` / `sum-distinct` take Integer and Float values and skip nil and every
+  nonnumeric type. Integer-only input gives Integer; any numeric Float gives
+  Float. An existing group without numbers gives Integer(0).
+- `min` / `max` skip nil and compare all other values by the window total order:
+  numbers by exact numeric value (Integer before an equal Float), then strings,
+  booleans, refs, keywords, and sets. Sets compare lexicographically by their
+  elements in that order. Mixed types are accepted.
+- `count` counts all non-nil arguments, including repetitions; `count-distinct`
+  counts their distinct values. Integer and Float are distinct types for both
+  distinct variants, even when numerically equal. `sum-distinct` retains only
+  numeric values, canonicalizing float zeros to +0.0 and NaNs to one NaN before
+  summing. Thus its all-negative-zero result is +0.0.
+- All-nil ordinary `min`/`max` groups are omitted, including when another
+  aggregate in the same group has a result. Windows instead retain each source
+  row and give nil for an empty extremum. No matching rows still means no rows
+  for `sum`, `sum-distinct`, `min` or `max`; an existing group is different from
+  an empty query. A count-only query without plain grouping variables returns
+  a zero row, also with hidden `:with` variables.
+- Ignoring an argument does not remove its source row or its position in a
+  bounded window. Grouping, `:with`, and row multiplicity are unchanged.
+
+For example, over arguments `10`, `"unknown"`, `20`, ordinary sum is 30,
+min is 10 and max is `"unknown"`. The final cumulative window over the same
+population gives those same values. The former type errors INT-041/043/044
+are deprecated for these built-ins; memory, decoding and user-function errors
+can still fail a query.
+<!-- @end -->
 
 <!-- @since v3.0.0 -->
 ### Exact, order-independent results
@@ -875,7 +906,7 @@ An aggregate's answer does not depend on the order in which the query produces i
 
 - `avg` uses the same numeric calculation as window `avg`: it adds integers and finite floats exactly, rounds the total once to the nearest Float (ties to even), then divides by the numeric count converted to Float. Integer totals are not saturated. The division rounds separately: this is not a correctly rounded exact rational mean. A finite total that overflows Float becomes infinity before division, so averaging two maximum finite floats yields infinity. NaN or both infinity signs yields NaN; one infinity sign yields that infinity. An all-negative-zero numeric population returns -0.0; exact cancellation returns +0.0. A negative nonzero total can also underflow to -0.0 during division.
 - `sum` / `sum-distinct` over integers add exactly and saturate to the `i64` range once, at the end: `i64::MAX + 1 + -1` is `i64::MAX`.
-- With any float, the sum is computed exactly and rounded once to the nearest float, so `1e16 + 1.0 + -1e16 + 1.0 + 0.5` is `2.5` in every order. A NaN, or both infinities, gives NaN; otherwise an infinity gives that infinity. The sum is `-0.0` only when every value is `-0.0`.
+- With any float, the sum is computed exactly and rounded once to the nearest float, so `1e16 + 1.0 + -1e16 + 1.0 + 0.5` is `2.5` in every order. A NaN, or both infinities, gives NaN; otherwise an infinity gives that infinity. Ordinary/window sum is `-0.0` only when every numeric value is `-0.0`; skipped values do not affect the sign. Distinct sum canonicalizes zeros to +0.0.
 - `min` / `max` of floats: `-0.0` is below `0.0`, and NaN is above every other number.
 - `count-distinct` / `sum-distinct` treat `0.0` and `-0.0` as one value, and all NaNs as one.
 - A grouping variable likewise puts `0.0` and `-0.0` in one group, and all NaNs in one; the group returns the least of its values in that order, so `-0.0` when the group holds it.
