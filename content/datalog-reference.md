@@ -897,6 +897,13 @@ min is 10 and max is `"unknown"`. The final cumulative window over the same
 population gives those same values. The former type errors INT-041/043/044
 are deprecated for these built-ins; memory, decoding and user-function errors
 can still fail a query.
+
+Eligible ordinary aggregates can release completed groups in index order
+([ordered grouping](architecture#streaming-engine)). `:with` variables are part
+of the effective grouping tuple even though they are hidden from `:find`; a
+requested final Sort is retained for these queries. `:offset` and `:limit` count emitted
+groups after min/max drops, and a retained Sort still reads all input. This
+optimization does not change the aggregate value rules above.
 <!-- @end -->
 
 <!-- @since v3.0.0 -->
