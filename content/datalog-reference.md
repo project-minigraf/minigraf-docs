@@ -216,9 +216,9 @@ A `:find` variable that no `:where` clause binds is not rejected: the query retu
 <!-- @since v3.0.0 -->
 | Function | Requires `:over` | Allowed without `:over` |
 |----------|-----------------|------------------------|
-| `avg`, `rank`, `row-number` | Yes | No |
+| `rank`, `row-number` | Yes | No |
 | `count-distinct`, `sum-distinct` | No | Yes (not window-compatible) |
-| `count`, `sum`, `min`, `max` | Optional | Yes |
+| `count`, `sum`, `avg`, `min`, `max` | Optional | Yes |
 | UDF names | Optional | Yes (runtime-resolved) |
 | `lag`, `lead` | Yes as built-ins | Yes when registered as UDF aggregates |
 <!-- @end -->
@@ -789,7 +789,22 @@ A branch with no `not`, no expression reading an outer variable and no pseudo-at
 
 Scalar aggregates appear in the `:find` clause as `(func ?var)`. All aggregates skip `null` values silently (SQL semantics).
 
+<!-- @until v3.0.0 -->
 **Supported functions**: `count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`
+
+`avg` requires `:over`; it is available only as a window function.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+**Supported functions**: `count`, `count-distinct`, `sum`, `sum-distinct`, `avg`, `min`, `max`
+
+`(avg ?v)` averages only Integer and Float values, skipping nil and every nonnumeric value. Its divisor is the numeric count; `(count ?v)` also counts nonnumeric values. The result is always Float when any number is present. An existing group with no numbers returns nil.
+
+```datalog
+(transact [[:a :score 10] [:b :score "unknown"] [:c :score 20]])
+(query [:find (avg ?score) :where [?e :score ?score]])
+;; => [[15.0]]
+```
+<!-- @end -->
 
 ```datalog
 ;; count — total number of non-null bindings
@@ -840,7 +855,15 @@ When the `:find` clause mixes plain variables and aggregates, the plain variable
 | `count` / `count-distinct` | `[[0]]` | empty set |
 | `sum` / `min` / `max` | empty set | empty set |
 
+<!-- @since v3.0.0 -->
+A query containing `avg` also returns no rows when nothing matches, even alongside `count` or with `:with`. This differs from an existing group whose arguments are all nil or nonnumeric: its average is nil.
+<!-- @end -->
+
 ### Type rules
+
+<!-- @since v3.0.0 -->
+- `avg`: Float for any numeric population; nil for an existing group without numbers. Skip nil and nonnumeric arguments.
+<!-- @end -->
 
 - `sum` / `sum-distinct`: Integer inputs → Integer result; any Float input → Float result (widening). Non-numeric, non-null values → runtime error.
 - `min` / `max`: Comparable types (Integer, Float, String). Mixing Integer and Float → runtime error. Non-comparable types (Boolean, Ref, Keyword) → runtime error.
@@ -850,6 +873,7 @@ When the `:find` clause mixes plain variables and aggregates, the plain variable
 
 An aggregate's answer does not depend on the order in which the query produces its rows:
 
+- `avg` uses the same numeric calculation as window `avg`: it adds integers and finite floats exactly, rounds the total once to the nearest Float (ties to even), then divides by the numeric count converted to Float. Integer totals are not saturated. The division rounds separately: this is not a correctly rounded exact rational mean. A finite total that overflows Float becomes infinity before division, so averaging two maximum finite floats yields infinity. NaN or both infinity signs yields NaN; one infinity sign yields that infinity. An all-negative-zero numeric population returns -0.0; exact cancellation returns +0.0. A negative nonzero total can also underflow to -0.0 during division.
 - `sum` / `sum-distinct` over integers add exactly and saturate to the `i64` range once, at the end: `i64::MAX + 1 + -1` is `i64::MAX`.
 - With any float, the sum is computed exactly and rounded once to the nearest float, so `1e16 + 1.0 + -1e16 + 1.0 + 0.5` is `2.5` in every order. A NaN, or both infinities, gives NaN; otherwise an infinity gives that infinity. The sum is `-0.0` only when every value is `-0.0`.
 - `min` / `max` of floats: `-0.0` is below `0.0`, and NaN is above every other number.
@@ -1589,7 +1613,12 @@ Multi-line input is supported — press Enter on an incomplete expression to con
 - **Timestamps**: UTC only (`"2024-01-15T10:00:00Z"` or date-only `"2024-01-15"`).
 - **Rule arity**: rule invocations take one or two arguments (`INT-028` otherwise).
 - **Stratified negation** (`not` / `not-join`) supported.
+<!-- @until v3.0.0 -->
 - **Scalar aggregation** (`count`, `count-distinct`, `sum`, `sum-distinct`, `min`, `max`, `:with`) supported.
+<!-- @end -->
+<!-- @since v3.0.0 -->
+- **Scalar aggregation** (`count`, `count-distinct`, `sum`, `sum-distinct`, `avg`, `min`, `max`, `:with`) supported.
+<!-- @end -->
 - **Arithmetic & predicate expressions** (`[(< ?v 100)]`, `[(+ ?a ?b) ?c]`, string/type predicates) supported.
 - **Disjunction** (`or` / `or-join`) supported — see [Disjunction](#disjunction) above.
 - **User-defined aggregate functions** (`register_aggregate`) usable in `:find` grouping and `:over` window clauses — see [User-Defined Functions](#user-defined-functions) above.
