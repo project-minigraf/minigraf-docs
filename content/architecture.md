@@ -75,7 +75,7 @@ src/
     ├── meta.rs                 — meta pages A/B: the only commit point
     ├── page.rs                 — 24-byte common page header (type, count, CRC32, page id, generation), page allocator
     ├── freelist.rs             — free-list chain of reusable pages
-    ├── keys.rs                 — byte-comparable keys: FDB integers, value tags, tx↓, FOREVER; MAX_VALUE_BYTES, MAX_IDENT_BYTES
+    ├── keys.rs                 — byte-comparable keys: FDB integers, value tags, tx↓, FOREVER; pure scalar decoders with Kani proofs; MAX_VALUE_BYTES, MAX_IDENT_BYTES
     ├── node.rs                 — prefix-compressed leaves and shortest-separator internal nodes
     ├── btree.rs                — on-disk B+tree over byte keys: build_btree, cow_insert, LeafCursor (seek, prefix_scan, get)
     ├── dict.rs                 — DICT tree: entity and ident ids, tx timestamps, long values; checkpoint-time Encoder
@@ -91,6 +91,8 @@ src/
         ├── memory.rs           — MemoryBackend: in-memory backend for testing
         └── fault_inject.rs     — FaultInjectingBackend: injects I/O errors for durability tests (test builds only)
 ```
+
+The format-v8 scalar key decoders have Kani round-trip and bounded malformed-input proofs (#693). Differential tests compare their results, errors and cursor positions with the earlier reader, including string and set escape paths.
 <!-- @end -->
 
 ### Language bindings (separate repositories)
