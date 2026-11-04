@@ -267,6 +267,16 @@ Bound the depth by writing one rule per hop instead.
 
 Full results with per-group commentary: [BENCHMARKS.md](https://github.com/project-minigraf/minigraf/blob/main/docs/BENCHMARKS.md).
 
+<!-- @since v3.0.0 -->
+The [manual v7-to-v8 migration sweep](https://github.com/project-minigraf/minigraf/blob/3b30398f408dd6d1c00e007126dc8e913fc61dbd/docs/benchmarks/838-migration/README.md)
+records frozen fixtures, raw timings and correctness checks for native migration
+through 200,000 facts and Chromium, Firefox and WebKit through 20,000 facts.
+It separates nonmigrating native read-only open, migration and same-context reopen,
+and checks bounded cursor snapshots during eight post-migration commits.
+The 200,000-fact browser rung, cold startup and sustained pin/memory scaling remain
+excluded. These manual measurements do not expand nightly benchmark coverage.
+<!-- @end -->
+
 Live history across releases: [bencher.dev/perf/minigraf/plots](https://bencher.dev/perf/minigraf/plots).
 
 Key tables to check before tuning:
