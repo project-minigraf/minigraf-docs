@@ -277,6 +277,25 @@ The 200,000-fact browser rung, cold startup and sustained pin/memory scaling rem
 excluded. These manual measurements do not expand nightly benchmark coverage.
 <!-- @end -->
 
+<!-- @since v3.0.0 -->
+The [manual shape sweep](https://github.com/project-minigraf/minigraf/blob/44e2d91c11568cc0d13189ad62cd6f4f2777ebd9/docs/benchmarks/841-shape-sweeps/README.md)
+separates sorting, partition layouts, set cardinalities, reference distributions,
+and sustained snapshot/log-reader retention. Read its pinned revision, storage
+state and measurement limits alongside each result: a process RSS peak includes
+more than the query meter charges, and a small output batch does not bound all
+operator state. This manual evidence is separate from nightly coverage and
+finite-memory release acceptance.
+
+Three patterns from it matter when tuning. A cursor or `FactLog` held across
+checkpoints keeps every page those checkpoints free, so the file grows until the
+oldest reader is released; many readers cost what the oldest one does, and the
+file does not shrink afterwards, though later checkpoints reuse the pages.
+A window's retained state follows its largest partition, and a query whose
+windows need incompatible partition or order keys holds the whole input. A descending (or
+otherwise unsatisfied) `:order-by` under `:limit` keeps `offset + limit` rows,
+so a deep offset retains about as many rows as it skips.
+<!-- @end -->
+
 Live history across releases: [bencher.dev/perf/minigraf/plots](https://bencher.dev/perf/minigraf/plots).
 
 Key tables to check before tuning:

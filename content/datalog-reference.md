@@ -533,8 +533,9 @@ The keyword-or-ref rule applies to the top-level `:where` of a query; `or` branc
   `:order-by` (`PRS-116`): without an order, pages could overlap or miss rows. To read a
   whole answer in pieces, use a cursor (`Minigraf::query`).
 - With `:order-by`, the query normally reads its whole answer before it returns a row.
-  Under a `:limit`, it keeps only the best `offset + limit` rows as it reads, so its
-  memory follows the limit, not the answer. A committed scalar range can skip sorting
+  Under a `:limit`, the final sort keeps only the best `offset + limit` rows as it
+  reads. This bounds that sort's retained rows; upstream operators and the size of
+  values in each row can still require more memory. A committed scalar range can skip sorting
   when the index proves the complete ascending order: for example,
   `[:find ?v :where [?e :score ?v] :order-by [?v] :limit 10]` can stop early when
   `:score`'s committed history has one value kind (integer, float, or Boolean) and that range
