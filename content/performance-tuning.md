@@ -135,6 +135,35 @@ let db = OpenOptions::new()
 ```
 <!-- @end -->
 
+<!-- @since v3.0.0 -->
+**`allow_overrides`** — Which query keywords may override the database's settings (#869). Default
+`Overridable::DEFAULTS`: `MaxDerivedFacts` (`:max-derived-facts`) and `MaxResults`
+(`:max-results`), so existing queries keep working. A query using a keyword the list leaves out is
+refused with `API-025` before it runs, from `execute`, `query`, `prepare` and
+`WriteTransaction::execute`; the override is never ignored or clamped. The list replaces the
+defaults rather than adding to them, and it is not stored in the file. Set it when query text comes
+from users or an LLM and must not raise your limits:
+
+```rust
+use minigraf::{OpenOptions, Overridable};
+
+// No query keyword may override a limit.
+let db = OpenOptions::new().allow_overrides([]).path("my.graph").open()?;
+
+// The defaults plus another variant.
+let opts = OpenOptions::new()
+    .allow_overrides(Overridable::DEFAULTS.iter().copied().chain([Overridable::MaxResults]));
+```
+
+| Setting | Changed for one query by | Gated by `allow_overrides` |
+|---|---|---|
+| `max_derived_facts` | `:max-derived-facts N` | yes (`MaxDerivedFacts`) |
+| `max_results` (deprecated) | `:max-results N` | yes (`MaxResults`) |
+| other `OpenOptions` | open only | — |
+
+`BrowserDb` takes no options and always uses the defaults.
+<!-- @end -->
+
 **`synchronous`** — Controls WAL write durability, independent of `checkpoint()` (which always
 fsyncs the main file regardless of this setting). `SyncMode::Full` (default) fsyncs after every
 WAL write — every `transact`/`retract` is durable immediately, at the cost of a disk round-trip
