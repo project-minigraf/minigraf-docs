@@ -137,8 +137,8 @@ let db = OpenOptions::new()
 
 <!-- @since v3.0.0 -->
 **`allow_overrides`** — Which query keywords may override the database's settings (#869). Default
-`Overridable::DEFAULTS`: `MaxDerivedFacts` (`:max-derived-facts`) and `MaxResults`
-(`:max-results`), so existing queries keep working. `QueryMemoryLimit` (`:query-memory-limit`,
+`Overridable::DEFAULTS`: `MaxDerivedFacts` (`:max-derived-facts`), `MaxResults`
+(`:max-results`) and `MaxIterations` (`:max-iterations`, #861), so existing queries keep working. `QueryMemoryLimit` (`:query-memory-limit`,
 #870) is not in the defaults. A query using a keyword the list leaves out is
 refused with `API-025` before it runs, from `execute`, `query`, `prepare` and
 `WriteTransaction::execute`; the override is never ignored or clamped. The list replaces the
@@ -160,13 +160,24 @@ let opts = OpenOptions::new()
 |---|---|---|
 | `max_derived_facts` | `:max-derived-facts N` or `$slot`; `PreparedQuery::with_max_derived_facts` | keyword yes (`MaxDerivedFacts`); setter no |
 | `max_results` (deprecated) | `:max-results N` or `$slot` | yes (`MaxResults`) |
+| `max_iterations` | `:max-iterations N` or `$slot`; `PreparedQuery::with_max_iterations` | keyword yes (`MaxIterations`); setter no |
 | `query_memory_limit` | `:query-memory-limit N` or `$slot`; `PreparedQuery::with_query_memory_limit` | keyword yes (`QueryMemoryLimit`, not in `DEFAULTS`); setter no |
 | other `OpenOptions` | open only | — |
 
 `BrowserDb` takes no options and always uses the defaults.
 
-**`PreparedQuery` limit setters** (#870) — `with_max_derived_facts(n)` and
-`with_query_memory_limit(bytes)` replace the database values copied at `prepare` for that
+**`max_iterations`** — The most rounds one stratum of a rule query may run (#861). Default
+1,000,000, equal to `max_derived_facts`: a stratum starts another round only after deriving a new
+fact, so at the defaults the derived-facts limit is reached first, and this one matters only when
+lowered. Rounds are counted per stratum. A stratum still deriving after the limit fails with
+`INT-020`. Before v3.0.0 the limit was a fixed 1,000 rounds.
+
+```rust
+let db = OpenOptions::new().max_iterations(10_000).path("my.graph").open()?;
+```
+
+**`PreparedQuery` limit setters** (#870, #861) — `with_max_derived_facts(n)`,
+`with_max_iterations(n)` and `with_query_memory_limit(bytes)` replace the database values copied at `prepare` for that
 statement. They are application code, so `allow_overrides` does not gate them; an allowed
 keyword in the prepared text still overrides them. `usize::MAX` means no limit.
 

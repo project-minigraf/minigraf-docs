@@ -632,7 +632,8 @@ derived in one iteration and `:max-results` the total.
 The embedder can refuse these keywords: a database opened with
 `OpenOptions::allow_overrides` not listing a keyword's `Overridable` variant refuses
 any query using it with `API-025`, whatever its value (#869; see
-[Performance Tuning](performance-tuning#configuration-knobs)). The default allows both.
+[Performance Tuning](performance-tuning#configuration-knobs)). The default allows both,
+and `:max-iterations` below.
 <!-- @end -->
 <!-- @since v3.0.0 -->
 
@@ -658,9 +659,30 @@ Unlike the two keys above, this one is **not** allowed by default: its
 query using it is refused with `API-025` unless the embedder lists it. `BrowserDb`
 always refuses it.
 
+### `:max-iterations` — per-query round limit
+
+`:max-iterations N` replaces `OpenOptions::max_iterations` for one query, up or down
+(#861): the most rounds one stratum of the query's rules may run. A stratum still
+deriving new facts after `N` rounds fails with `INT-020`, whose message says how to
+raise the limit. Rounds are counted per stratum, not in total.
+
+```datalog
+(query [:find ?y :where (reachable :root ?y) :max-iterations 50000])
+```
+
+`N` is at least 1 (`INT-014`); a non-integer is `INT-015`, a missing value
+`INT-013`, and giving the key twice `INT-012`. Its `Overridable::MaxIterations`
+variant is in `Overridable::DEFAULTS`, so it works unless the embedder removes it.
+
+The default is 1,000,000 rounds, equal to the `max_derived_facts` default. A stratum
+starts another round only after deriving a new fact, so at the defaults the
+derived-facts limit is reached first. Before v3.0.0 the limit was 1,000 rounds and
+could not be changed: a recursion over a chain of more than about 1,000 edges failed
+with `INT-020`.
+
 ### Bind slots on the limit keys
 
-`:max-derived-facts`, `:max-results` and `:query-memory-limit` take a `$slot` in a
+`:max-derived-facts`, `:max-results`, `:max-iterations` and `:query-memory-limit` take a `$slot` in a
 prepared query, filled with an integer (`BindValue::Val(Value::Integer(n))`):
 
 ```datalog
@@ -668,7 +690,7 @@ prepared query, filled with an integer (`BindValue::Val(Value::Integer(n))`):
 ```
 
 The bound value follows the literal form's range: at least 1 for
-`:max-derived-facts`/`:max-results` (`INT-014`), at least 0 for `:query-memory-limit`
+`:max-derived-facts`/`:max-results`/`:max-iterations` (`INT-014`), at least 0 for `:query-memory-limit`
 (`INT-015`). Another value type is `API-024`, and a missing one `API-022`. `execute`
 refuses a query with an unbound slot (`API-010`). `allow_overrides` gates the slot
 form the same way: a refused key fails at `prepare`.
