@@ -634,6 +634,45 @@ The embedder can refuse these keywords: a database opened with
 any query using it with `API-025`, whatever its value (#869; see
 [Performance Tuning](performance-tuning#configuration-knobs)). The default allows both.
 <!-- @end -->
+<!-- @since v3.0.0 -->
+
+### `:query-memory-limit` — per-query memory limit
+
+`:query-memory-limit N` replaces `OpenOptions::query_memory_limit` (bytes) for one
+query, up or down (#870). A query that would hold more fails with `QRY-012`.
+
+```datalog
+(query [:find ?dept (count ?e)
+        :where [?e :employee/dept ?dept]
+        :query-memory-limit 16777216])
+```
+
+`N` is a non-negative integer; a negative or non-integer value is `INT-015`, and
+giving the key twice is `INT-012`. `:query-memory-limit 0` lets the query run only if
+it holds no state: no join, aggregate, sort, distinct set or rule relation, and no
+entity ids to resolve. Uncheckpointed facts and returned entities need ids, so in
+practice only a query over checkpointed facts that returns values runs under 0.
+
+Unlike the two keys above, this one is **not** allowed by default: its
+`Overridable::QueryMemoryLimit` variant is left out of `Overridable::DEFAULTS`, so a
+query using it is refused with `API-025` unless the embedder lists it. `BrowserDb`
+always refuses it.
+
+### Bind slots on the limit keys
+
+`:max-derived-facts`, `:max-results` and `:query-memory-limit` take a `$slot` in a
+prepared query, filled with an integer (`BindValue::Val(Value::Integer(n))`):
+
+```datalog
+(query [:find ?x ?y :where (reach ?x ?y) :max-derived-facts $cap])
+```
+
+The bound value follows the literal form's range: at least 1 for
+`:max-derived-facts`/`:max-results` (`INT-014`), at least 0 for `:query-memory-limit`
+(`INT-015`). Another value type is `API-024`, and a missing one `API-022`. `execute`
+refuses a query with an unbound slot (`API-010`). `allow_overrides` gates the slot
+form the same way: a refused key fails at `prepare`.
+<!-- @end -->
 
 The limits are applied for that query only and do not affect subsequent queries.
 
