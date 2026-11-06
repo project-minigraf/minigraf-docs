@@ -628,6 +628,12 @@ Either key replaces the `OpenOptions` limit for that query; with neither, the
 `OpenOptions` limit applies. Before v3.0.0, `:max-derived-facts` capped the facts
 derived in one iteration and `:max-results` the total.
 <!-- @end -->
+<!-- @since v3.0.0 -->
+The embedder can refuse these keywords: a database opened with
+`OpenOptions::allow_overrides` not listing a keyword's `Overridable` variant refuses
+any query using it with `API-025`, whatever its value (#869; see
+[Performance Tuning](performance-tuning#configuration-knobs)). The default allows both.
+<!-- @end -->
 
 The limits are applied for that query only and do not affect subsequent queries.
 
