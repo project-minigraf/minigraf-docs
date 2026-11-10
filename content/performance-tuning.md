@@ -214,7 +214,7 @@ let mut tx = db.begin_write_with(
         .synchronous(SyncMode::Normal) // no WAL sync at this commit
         .chunk_facts(16_384),          // this transaction's chunk size
 )?;
-tx.execute("(transact [[:e1 :name "a"]])")?;
+tx.execute("(transact [[:e1 :name \"a\"]])")?;
 tx.commit()?;
 ```
 
