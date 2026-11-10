@@ -187,6 +187,37 @@ let pq = db
     .with_max_derived_facts(10_000)
     .with_query_memory_limit(16 << 20);
 ```
+
+`PreparedQuery` is `Clone` (#872): `pq.clone().with_max_iterations(10)` gives a second statement
+with its own limits and leaves `pq` unchanged.
+
+**In the language bindings** (#872) — Every binding takes the override list, reads the default
+list from the core library (it is never written out again in a binding), takes
+`transaction_chunk_facts` and `max_iterations` when it opens a database, and has the three setters
+on its prepared query. Each setter returns a new prepared query and leaves the one it was called on
+unchanged. As in Rust, a missing list means the defaults, a list replaces them, and an empty list
+refuses every override keyword (`API-025`). A negative count is `API-017`. The no-limit value of a
+setter is the one each binding uses for `query_memory_limit`.
+
+| Binding | Override list | Default list | Open options | Setters | No limit |
+|---|---|---|---|---|---|
+| Python | `minigraf.open(..., allow_overrides=[Overridable.QUERY_MEMORY_LIMIT])` | `minigraf.OVERRIDABLE_DEFAULTS` | `transaction_chunk_facts=`, `max_iterations=` | `with_max_derived_facts`, `with_query_memory_limit`, `with_max_iterations` | `2**63 - 1` |
+| Java | `Minigraf.options().allowOverrides(...)` | `Minigraf.OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` | `Long.MAX_VALUE` |
+| Android | `OpenOptions(allowOverrides = ...)` | `OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` | `Long.MAX_VALUE` |
+| Swift | `OpenOptions(allowOverrides: ...)` | `Overridable.defaults` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts(n:)`, `withQueryMemoryLimit(bytes:)`, `withMaxIterations(n:)` | `Int64.max` |
+| Node.js | `{ allowOverrides: ['maxDerivedFacts', 'maxResults', 'queryMemoryLimit', 'maxIterations'] }` | `OVERRIDABLE_DEFAULTS` | `transactionChunkFacts`, `maxIterations` | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` | `Number.MAX_SAFE_INTEGER` or more |
+| C | `"allow_overrides": ["max_derived_facts", "max_results", "query_memory_limit", "max_iterations"]` | `minigraf_overridable_defaults()` (JSON) | `"transaction_chunk_facts"`, `"max_iterations"` | `minigraf_prepared_with_max_derived_facts`, `…_with_query_memory_limit`, `…_with_max_iterations` | `SIZE_MAX` |
+| Browser | none | none | none | `withMaxDerivedFacts`, `withQueryMemoryLimit`, `withMaxIterations` on `BrowserPreparedQuery` | 2^32 − 1 or more |
+
+```python
+db = minigraf.open("app.graph", allow_overrides=[], max_iterations=10_000)
+reach = db.prepare("(query [:find ?x ?y :where (reach ?x ?y)])")
+small = reach.with_max_derived_facts(10_000)  # reach keeps the database's limit
+```
+
+`BrowserDb` has only the setters: it takes no open options, so the default list applies and
+`:query-memory-limit` in query text is refused. A browser setter takes a non-negative integer
+number; a negative, fractional or non-finite one throws `[API-017]`.
 <!-- @end -->
 
 **`synchronous`** — Controls WAL write durability, independent of `checkpoint()` (which always
