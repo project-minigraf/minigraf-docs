@@ -199,6 +199,36 @@ clean close), so a window of writes is lost on OS crash or power loss. Combine w
 `Normal`, `wal_checkpoint_threshold` high or `usize::MAX`, write the whole batch, then call
 `db.checkpoint()` once at the end.
 
+<!-- @since v3.0.0 -->
+**Per-transaction options (`TxOptions`).** One `WriteTransaction` can choose its own sync mode
+and chunk size with `begin_write_with`, without reopening the database; `begin_write()` uses the
+database's options. A `None` field means the database value, and the options apply to that
+transaction only:
+
+```rust
+use minigraf::{SyncMode, TxOptions};
+
+// A database opened with the default SyncMode::Full.
+let mut tx = db.begin_write_with(
+    TxOptions::new()
+        .synchronous(SyncMode::Normal) // no WAL sync at this commit
+        .chunk_facts(16_384),          // this transaction's chunk size
+)?;
+tx.execute("(transact [[:e1 :name "a"]])")?;
+tx.commit()?;
+```
+
+- `synchronous` decides only whether that transaction's WAL entry is synced. A later `Full`
+  commit syncs the whole WAL, so it also makes the earlier `Normal` commits durable: a bulk load
+  can run as `Normal` transactions on a `Full` database and end with one `Full` transaction (or
+  `checkpoint()`). After a power loss the database holds a prefix of the commit order that
+  includes every transaction up to the last `Full` commit or checkpoint.
+- It has no effect on a transaction that becomes large (it commits as a checkpoint, durable in
+  both modes) or on an in-memory database.
+- `chunk_facts` replaces `transaction_chunk_facts` for that transaction, kept between 1 and
+  1,000,000.
+<!-- @end -->
+
 ---
 
 ## Query Patterns

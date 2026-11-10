@@ -381,6 +381,10 @@ CRC32-protected entries ensure partial writes (from crashes) are safely discarde
 
 `checkpoint()` itself always fsyncs the main `.graph` file regardless of `synchronous` — it remains the hard durability boundary in both modes.
 
+<!-- @since v3.0.0 -->
+The WAL writer keeps no mode: each entry is appended with its transaction's, which is `OpenOptions::synchronous` unless a `WriteTransaction` was begun with `begin_write_with(TxOptions::new().synchronous(..))`. One WAL can therefore hold synced and unsynced entries; a `Full` append syncs the whole file, earlier `Normal` entries included. A large transaction's WAL guard header is always synced.
+<!-- @end -->
+
 <!-- @since v2.0.5 -->
 Opening a database for writing cuts the WAL back to the end of its last valid entry, and syncs it, before anything is appended, so a new entry always lands where replay reaches it. After a failed WAL write or sync, later writes through that handle fail with `WAL-007` until the database is reopened or a `checkpoint()` succeeds. The transaction whose write failed is not applied; after a reopen it is there in full or not at all.
 <!-- @end -->
