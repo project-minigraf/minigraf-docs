@@ -822,3 +822,99 @@ minigraf_close(db);
 ```
 
 Memory contract mirrors SQLite: `minigraf_execute` returns a heap-allocated string; call `minigraf_string_free` to release it. See the [minigraf-c README](https://github.com/project-minigraf/minigraf-c) for the full API.
+
+<!-- @since v3.0.0 -->
+---
+
+## Write transactions in every binding
+
+Every binding can begin a write transaction, run several `transact`, `retract` and `query` statements in it with queries seeing what it staged, and then commit everything as one transaction or roll it back ([#824](https://github.com/project-minigraf/minigraf/issues/824)). The rules are the same everywhere:
+
+- A transaction's `execute` returns what the database's `execute` returns; a staged write returns `{"ok":true}`. A statement that fails stages nothing and leaves the transaction open. There are no cursors or prepared queries inside a transaction, and no nested transactions.
+- `commit` applies everything as one transaction (one `tx_count`); a commit that fails rolls back. `rollback` discards it. After either, the transaction is finished: `execute` and `commit` fail with `API-018`, and `rollback` does nothing.
+- Commit is always explicit. A scope form (Python `with`, Kotlin `use`, Java try-with-resources, a Swift closure) rolls back on exit unless the transaction committed, and so does freeing an open transaction. Do not rely on a garbage collector to end one.
+- An open transaction holds the database's write lock until it finishes. On the thread that began it, and inside user functions its statements run, database calls fail with `INT-001`. Other threads' writes and begins wait until it ends; their queries read the committed state.
+- Rules registered inside a transaction stay registered after a rollback.
+- Options (native bindings): `synchronous` (this commit's WAL sync) and `chunk_facts` (facts staged before a file database writes the transaction in chunks); absent, the database's values.
+
+Rust (`OwnedWriteTransaction` is `Send + 'static`; the borrowed `begin_write` stays):
+
+```rust
+let mut tx = db.begin_write_owned()?;
+tx.execute(r#"(transact [[:alice :balance 70] [:bob :balance 80]])"#)?;
+tx.commit()?;
+```
+
+Python:
+
+```python
+with db.begin_write(chunk_facts=10_000) as tx:
+    tx.execute("(transact [[:alice :balance 70] [:bob :balance 80]])")
+    tx.commit()
+```
+
+Kotlin (JVM and Android):
+
+```kotlin
+db.beginWrite(TxOptions(chunkFacts = 10_000)).use { tx ->
+    tx.execute("(transact [[:alice :balance 70] [:bob :balance 80]])")
+    tx.commit()
+}
+```
+
+Java:
+
+```java
+try (MiniGrafWriteTransaction tx = db.beginWriteWith(Minigraf.txOptions().chunkFacts(10_000).build())) {
+    tx.execute("(transact [[:alice :balance 70] [:bob :balance 80]])");
+    tx.commit();
+}
+```
+
+Swift:
+
+```swift
+try db.withWriteTransaction(options: TxOptions(chunkFacts: 10_000)) { tx in
+    _ = try tx.execute(datalog: "(transact [[:alice :balance 70] [:bob :balance 80]])")
+    try tx.commit()
+}
+```
+
+Node.js (one JavaScript thread, so every other database call during a transaction is `INT-001`, never a wait; `close()` rolls back an open transaction):
+
+```js
+const tx = db.beginWrite({ chunkFacts: 10000 })
+try {
+  tx.execute('(transact [[:alice :balance 70] [:bob :balance 80]])')
+  tx.commit()
+} finally {
+  tx.rollback() // does nothing once committed
+}
+```
+
+C (`minigraf_close` rolls back an open transaction; free the handle afterwards):
+
+```c
+MiniGrafTx *tx = minigraf_begin_write(db, "{\"chunk_facts\": 10000}");
+char *r = minigraf_tx_execute(tx, "(transact [[:alice :balance 70] [:bob :balance 80]])");
+minigraf_string_free(r);
+minigraf_tx_commit(tx);
+minigraf_tx_free(tx);
+```
+
+Browser (`@minigraf/browser`):
+
+```js
+const tx = db.beginWrite()
+try {
+  tx.execute('(transact [[:alice :balance 70] [:bob :balance 80]])')
+  await tx.commit()
+} finally {
+  tx.rollback()
+}
+```
+
+The browser differs in three ways. `beginWrite()` takes no options. There is no WAL: `commit()` applies the transaction at once and its promise resolves after the IndexedDB write, so the commit is durable when the promise resolves. And while a transaction is open, every other `BrowserDb` call that reads or writes (`execute`, `query`, `prepare`, `checkpoint`, `importGraph`, another `beginWrite`, a prepared query's runs) throws or rejects with `[INT-001]`, so other asynchronous code cannot mistake the database for the transaction.
+
+The WASI package (`@minigraf/wasi`) is the REPL, not a library: every command it reads commits on its own, and a command that fails leaves the ones before it committed. It has no explicit transactions.
+<!-- @end -->
