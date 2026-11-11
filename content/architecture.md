@@ -60,7 +60,7 @@ when the grouping and argument proofs below succeed.
 src/
 ├── main.rs                     — binary entry point (interactive REPL)
 ├── lib.rs                      — public API exports
-├── db.rs                       — public embedded API: Minigraf, OpenOptions (incl. read_only), WriteTransaction, IntegrityReport; execute / query / fact_log / prepare / begin_write / checkpoint / verify / rebuild_indexes; register_aggregate / register_predicate and their fallible try_ forms (UdfError, QRY-014) for UDFs
+├── db.rs                       — public embedded API: Minigraf, OpenOptions (incl. read_only), WriteTransaction, OwnedWriteTransaction, IntegrityReport; execute / query / fact_log / prepare / begin_write / begin_write_owned / checkpoint / verify / rebuild_indexes; register_aggregate / register_predicate and their fallible try_ forms (UdfError, QRY-014) for UDFs
 ├── cursor.rs                   — Cursor / Batch: owned, Send cursor returned by Minigraf::query and PreparedQuery::query
 ├── fact_log.rs                 — FactLog / FactFilter / FactRecord / FactOrder: every fact version, streamed without Datalog
 ├── log_writer.rs               — LogWriter: builds a new file from FactRecords, keeping their tx and valid time
@@ -500,6 +500,19 @@ Calling `checkpoint`, `prepare` or `PreparedQuery::execute` on a thread holding 
 `WriteTransaction` returns `INT-001`; commit or roll back the transaction first.
 The transaction stays usable after the refused call
 ([#734](https://github.com/project-minigraf/minigraf/issues/734)).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+`Minigraf::begin_write_owned` / `begin_write_owned_with(TxOptions)` return an
+`OwnedWriteTransaction`: `Send + 'static`, it keeps the database open and may
+begin on one thread and run, commit, roll back or be dropped on another; every
+language binding's transaction is one
+([#824](https://github.com/project-minigraf/minigraf/issues/824)). The write
+lock is a mutex over the write context plus a flag and condition variable: while
+an owned transaction holds it, every other writer (writes, checkpoints,
+`verify`, `rebuild_indexes`, begins) waits. Queries do not take it. The calls a
+`WriteTransaction` refuses on its thread are `INT-001` on the owned
+transaction's begin thread (recorded per database) and on the thread running
+one of its statements, so a user function that calls back gets `INT-001`.
 <!-- @end -->
 
 - Concurrent reads via `Arc<RwLock<FactStorage>>`
