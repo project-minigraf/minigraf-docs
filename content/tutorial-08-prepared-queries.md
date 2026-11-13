@@ -61,10 +61,12 @@ The permitted `BindValue` variant depends on where the slot appears:
 Prepare once at startup; execute with a different product UUID on every request.
 
 ```rust
-use minigraf::{Minigraf, OpenOptions, BindValue};
+use minigraf::{BindValue, EntityId, OpenOptions};
 
-let db = OpenOptions::new().open()?;
-// ... load product data ...
+// Open the database loaded in Setup and updated in the preceding sections.
+let db = OpenOptions::new().path("corestore.graph").open()?;
+let laptop_pro_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":laptop-pro");
+let phone_x_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":phone-x");
 
 // Prepare once — parse and plan cost paid here
 let price_query = db.prepare(
@@ -84,7 +86,7 @@ let phone_price = price_query.execute(&[
 // → [[Value::Integer(799)]]
 ```
 
-> **Note on UUIDs.** `laptop_pro_id` is the UUID that Minigraf assigned to the `:laptop-pro` keyword when it was first transacted. In the REPL, keywords resolve to stable per-session UUIDs. In production code, capture the UUID from the first transact response and store it for later use as a bind value.
+> **Note on UUIDs.** Named keywords such as `:laptop-pro` map deterministically to UUIDv5 IDs in the OID namespace. Include the leading colon when deriving the ID, as above. The same keyword resolves to the same ID across sessions and databases. A transact response contains a transaction ID, not the entity IDs. Examples 2 and 3 reuse `db` from Example 1.
 
 ---
 
@@ -93,7 +95,9 @@ let phone_price = price_query.execute(&[
 Parameterise the transaction count to replay history for any order at any past tx.
 
 ```rust
-use minigraf::{Minigraf, OpenOptions, BindValue};
+use minigraf::{BindValue, EntityId};
+
+let ben_order_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":ben-order-1");
 
 // Prepare: what was an order's status at a given tx?
 let status_query = db.prepare(
@@ -126,8 +130,9 @@ let at_delivery = status_query.execute(&[
 Parameterise the valid-time dimension to look up business-time facts at any point.
 
 ```rust
-use minigraf::{Minigraf, OpenOptions, BindValue};
+use minigraf::{BindValue, EntityId};
 
+let laptop_pro_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":laptop-pro");
 let sale_query = db.prepare(
     "(query [:find ?price
              :valid-at $date
@@ -137,7 +142,7 @@ let sale_query = db.prepare(
 // What was the sale price on 2026-01-15?
 let jan_price = sale_query.execute(&[
     ("product", BindValue::Entity(laptop_pro_id)),
-    ("date",    BindValue::Timestamp(1736899200000)), // 2026-01-15 00:00 UTC in ms
+    ("date",    BindValue::Timestamp(1768435200000)), // 2026-01-15 00:00 UTC in ms
 ])?;
 // → [[Value::Integer(1049)]]   (corrected winter sale price)
 
@@ -178,10 +183,10 @@ When you genuinely need to query across different attributes, write separate pre
 `PreparedQuery` holds `Arc` clones of the live fact store. Each `execute()` sees the **current** state of the database — including facts transacted after `prepare()` was called. This is by design: you prepare once at application startup and the query stays live as data changes without any manual cache invalidation.
 
 ```rust
-use minigraf::{Minigraf, OpenOptions, BindValue};
+use minigraf::OpenOptions;
 
-let db = OpenOptions::new().open()?;
-// ... load initial data ...
+// Use a separate database so this example does not alter the tutorial dataset.
+let db = OpenOptions::new().open_memory()?;
 
 // Prepare before the price update
 let q = db.prepare(
