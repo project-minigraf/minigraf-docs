@@ -38,8 +38,8 @@ Minigraf's bindings are split into [support tiers](https://github.com/project-mi
 | **Set values** | ✅ `#{...}` values, membership predicates, `collect-set` (v3.0.0) | ✅ Yes | ⚠️ Lists | ⚠️ Lists | ❌ No |
 | **Ordered, bounded results** | ✅ `:order-by`, `:limit`, `:offset`, top-k (v3.0.0) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
 | **Rust** | ✅ Yes | ❌ Clojure | ✅ Yes | ❌ Java | ❌ C |
-| **WASM Ready** | ✅ Yes (browser, WASI) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
-| **Platform support** | Tier 1: Rust, Python, browser WASM. Tier 2 (experimental): WASI, Android, iOS, Node.js, Java, C | JVM only | Native, WASM (limited) | JVM only | Native, WASM |
+| **WASM Ready** | ✅ Yes (IndexedDB; OPFS in dedicated workers; WASI) | ❌ No | ⚠️ Limited | ❌ No | ✅ Yes |
+| **Platform support** | Tier 1: Rust, Python, browser WASM (OPFS backend starts at Tier 2). Tier 2 (experimental): WASI, Android, iOS, Node.js, Java, C | JVM only | Native, WASM (limited) | JVM only | Native, WASM |
 | **Maturity** | Young (v1.0 in 2026); v3.0.0 brings file format v8 and data-integrity fixes | Mature | Pre-1.0 | Mature | Decades of production use |
 
 Minigraf's bindings are split into [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
