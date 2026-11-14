@@ -84,9 +84,9 @@ where the native API is required; all other recipes use the Datalog REPL syntax.
 **Problem:** Run the same query shape thousands of times per session with different entity IDs and tx snapshots without re-parsing each time.
 
 ```rust
-use minigraf::{Minigraf, OpenOptions, BindValue};
+use minigraf::{OpenOptions, BindValue};
 
-let db = OpenOptions::new().open("agent.graph")?;
+let db = OpenOptions::new().path("agent.graph").open()?;
 
 // Prepare once at session startup — parse and plan happen here
 let pq = db.prepare(
@@ -107,7 +107,7 @@ for (entity_id, tx) in agent_queries {
 
 **Notes:**
 - `$tx` and `$entity` are named bind slots; `prepare()` parses and plans once; `execute()` substitutes values and runs
-- `BindValue::TxCount(u64)` for `:as-of`-style tx bindings; `BindValue::Entity(uuid::Uuid)` for entity IDs; `BindValue::String(String)` for string values
+- `BindValue::TxCount(u64)` for `:as-of`-style tx bindings; `BindValue::Entity(uuid::Uuid)` for entity IDs; `BindValue::Val(Value::String(..))` for string values
 - `PreparedQuery` is `Send + Sync`; safe to share across threads — each `execute()` call is independent
 
 ---
@@ -298,8 +298,11 @@ agent-instance-3/  →  session-ghi.graph
 - The `.graph` file travels with the agent (container volume, device storage, cloud object store)
 
 ```rust
+use minigraf::OpenOptions;
+
 // Each session gets its own file — no coordination needed
-let db = OpenOptions::new().open(&format!("sessions/{session_id}.graph"))?;
+std::fs::create_dir_all("sessions")?;
+let db = OpenOptions::new().path(format!("sessions/{session_id}.graph")).open()?;
 ```
 
 **When to use a different approach:**
@@ -308,7 +311,7 @@ let db = OpenOptions::new().open(&format!("sessions/{session_id}.graph"))?;
 
 **Notes:**
 - Each `.graph` file is completely self-contained; no server, no coordination, no network calls
-- `OpenOptions::new().open(path)` creates the file if it doesn't exist, opens it otherwise
+- `OpenOptions::new().path(path).open()` creates the file if it doesn't exist, opens it otherwise
 - `MiniGrafDb` is `Arc<Mutex<…>>` internally — the handle is `Send + Sync` but concurrent calls are serialized
 
 ---

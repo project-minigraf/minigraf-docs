@@ -1622,7 +1622,7 @@ A missing bind value is `API-022`, a bind slot in an attribute position `API-023
 ### API
 
 ```rust
-use minigraf::{Minigraf, OpenOptions, BindValue};
+use minigraf::{OpenOptions, BindValue, EntityId};
 
 let db = OpenOptions::new().path("agents.graph").open()?;
 
@@ -1632,6 +1632,10 @@ let pq = db.prepare(
              :as-of $tx
              :where [$entity :belief/value ?belief]])"
 )?;
+
+// Keywords map to UUIDv5 IDs in the OID namespace, including the leading colon.
+let alice_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":alice");
+let bob_id = EntityId::new_v5(&EntityId::NAMESPACE_OID, b":bob");
 
 // Execute many times — the bind values are substituted and the query runs
 let r1 = pq.execute(&[
