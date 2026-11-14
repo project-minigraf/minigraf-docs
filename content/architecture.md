@@ -107,7 +107,10 @@ The format-v8 scalar key decoders have Kani round-trip and bounded malformed-inp
 <!-- @since v3.0.0 -->
 `BrowserDb.openOpfs(name)` uses the v8 copy-on-write commit directly on OPFS,
 without a WAL. `close()` releases its exclusive handle and invalidates dependents
-in every mode. Import stages a verified image in `<name>.graph-import`, then
+in every mode. Database `<name>` maps exactly to `<name>.graph`; its staging
+file `<name>.graph-import` cannot be addressed by any database name. Import
+rejects nonempty input without a selectable meta before replacing anything; only
+an empty blob creates an empty database. It stages a verified image, then
 publishes and copies it with old-or-new recovery. OPFS alone accepts a sole valid
 meta despite newer data pages; native STG-033 recovery is unchanged. See
 [the browser durability contract](durability#browser-storage-modes).
