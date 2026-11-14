@@ -109,8 +109,9 @@ The format-v8 scalar key decoders have Kani round-trip and bounded malformed-inp
 without a WAL. `close()` releases its exclusive handle and invalidates dependents
 in every mode. Database `<name>` maps exactly to `<name>.graph`; its staging
 file `<name>.graph-import` cannot be addressed by any database name. Import
-rejects nonempty input without a selectable meta before replacing anything; only
-an empty blob creates an empty database. It stages a verified image, then
+admits an empty blob; a nonempty v8 image with a selectable meta and complete,
+verified contents (including an empty v8 image); or a supported v7 image that
+migrates completely. It stages a verified image before replacing anything, then
 publishes and copies it with old-or-new recovery. OPFS alone accepts a sole valid
 meta despite newer data pages; native STG-033 recovery is unchanged. See
 [the browser durability contract](durability#browser-storage-modes).
