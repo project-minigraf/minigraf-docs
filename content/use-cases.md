@@ -465,7 +465,7 @@ Browser apps built on a local-first architecture face the same eventual-consiste
 > **Support tier 2 (experimental).** Built and smoke-tested, released on a best-effort schedule, possibly after the core release. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
 <!-- @end -->
 <!-- @since v3.0.0 -->
-> **Support tier 1.** Fully tested and released at the same time as every core release. The IndexedDB backend is Tier 1; the OPFS backend (v3.1.0) starts at Tier 2 until it has shipped. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
+> **Support tier 1.** Fully tested and released at the same time as every core release. The IndexedDB backend is Tier 1; the OPFS backend (v3.0.0) starts at Tier 2 until it has shipped. See [support tiers](https://github.com/project-minigraf/minigraf/blob/main/PHILOSOPHY.md#support-tiers).
 <!-- @end -->
 
 Two distinct WASM targets:
@@ -580,6 +580,32 @@ const bytes = new Uint8Array(await file.arrayBuffer());
 await db.importGraph(bytes);
 ```
 
+<!-- @since v3.0.0 -->
+#### OPFS in a dedicated worker
+
+`await BrowserDb.openOpfs(name)` stores one real `<name>.graph` file in the
+origin's OPFS root. It requires HTTPS or localhost and a dedicated worker with
+sync access handles. Pages are read on demand through a 256-page cache; no
+whole-file page buffer or WAL is kept. The same name in IndexedDB and OPFS names
+two independent databases, with no automatic fallback or migration.
+
+Use a module worker and exchange requests/results with `postMessage`; the
+[package README](https://github.com/project-minigraf/minigraf-wasm/tree/v3#opfs-worker)
+contains a complete example. `close()` is synchronous in all modes and releases
+the OPFS lock immediately, even with old dependents still referenced. A second
+open from another tab or worker fails with STG-026. A main-thread/unsupported open
+fails with API-026. Closed database/dependent calls fail with API-018; calls
+admitted during import fail with API-027.
+
+OPFS import verifies the input and recovers the complete old or new image after
+interruption; successful publication invalidates older cursors and prepared
+queries. Move between modes by exporting v8 bytes and explicitly importing them
+at the destination. Quota and eviction are browser-managed. Minigraf never calls
+`navigator.storage.persist()`; an application may request it itself. Browser
+flush is not a power-loss guarantee, and sole-valid-meta recovery can fall back
+after meta rot. See [durability and recovery](durability#browser-storage-modes).
+<!-- @end -->
+
 #### Constraints
 
 - **Browser only**: `BrowserDb` requires a browser environment with IndexedDB. Not compatible with Node.js, Deno, or Bun.
@@ -691,7 +717,7 @@ Every build, browser and WASI included, orders query clauses by selectivity; no 
 
 ### Portability: export and import as a `.graph` file
 
-Although the browser backend stores data as page-granular IndexedDB records internally, the `.graph` binary format is preserved for portability. A database created on desktop can be loaded in the browser, and vice versa. Export (download) reconstructs the file by reading pages in order; import (upload) writes each page to IndexedDB.
+Although IndexedDB mode stores data as page-granular records internally, the `.graph` binary format is preserved for portability. A database created on desktop can be loaded in the browser, and vice versa. Export (download) reconstructs the file by reading pages in order; import (upload) writes each page to IndexedDB.
 
 ---
 
@@ -914,7 +940,7 @@ try {
 }
 ```
 
-The browser differs in three ways. `beginWrite()` takes no options. There is no WAL: `commit()` applies the transaction at once and its promise resolves after the IndexedDB write, so the commit is durable when the promise resolves. And while a transaction is open, every other `BrowserDb` call that reads or writes (`execute`, `query`, `prepare`, `checkpoint`, `importGraph`, another `beginWrite`, a prepared query's runs) throws or rejects with `[INT-001]`, so other asynchronous code cannot mistake the database for the transaction.
+The browser differs in three ways. `beginWrite()` takes no options. There is no WAL: `commit()` applies the transaction at once and its promise resolves after the IndexedDB write or OPFS flushes (subject to the browser storage guarantees). And while a transaction is open, every other `BrowserDb` call that reads or writes (`execute`, `query`, `prepare`, `checkpoint`, `importGraph`, another `beginWrite`, a prepared query's runs) throws or rejects with `[INT-001]`, so other asynchronous code cannot mistake the database for the transaction.
 
 The WASI package (`@minigraf/wasi`) is the REPL, not a library: every command it reads commits on its own, and a command that fails leaves the ones before it committed. It has no explicit transactions.
 <!-- @end -->

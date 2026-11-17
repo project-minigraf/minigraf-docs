@@ -70,7 +70,9 @@ src/
 ├── error.rs                    — structured error codes: MinigrafError, ErrorCategory, ErrorCode registry (PRS/QRY/STG/WAL/API/INT); matches docs/ERROR_REFERENCE.md
 ├── browser/                    — browser WASM backend (`browser` feature)
 │   ├── buffer.rs               — BrowserBufferBackend: in-memory pages with dirty-page tracking
-│   └── indexeddb.rs            — IndexedDB persistence; BrowserDb.query returns a BrowserCursor
+│   ├── indexeddb.rs            — IndexedDB persistence on main thread and workers
+│   ├── backend.rs              — buffer/OPFS backend dispatch
+│   └── opfs.rs                 — dedicated-worker sync access handle; one .graph file and a 256-page cache
 ├── graph/
 │   ├── types.rs                — Fact, Value, EntityId, Attribute, VALID_TIME_FOREVER
 │   └── storage.rs              — FactStorage: in-memory EAV store with temporal query methods
@@ -100,6 +102,19 @@ src/
 ```
 
 The format-v8 scalar key decoders have Kani round-trip and bounded malformed-input proofs (#693). Differential tests compare their results, errors and cursor positions with the earlier reader, including string and set escape paths.
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
+`BrowserDb.openOpfs(name)` uses the v8 copy-on-write commit directly on OPFS,
+without a WAL. `close()` releases its exclusive handle and invalidates dependents
+in every mode. Database `<name>` maps exactly to `<name>.graph`; its staging
+file `<name>.graph-import` cannot be addressed by any database name. Import
+admits an empty blob; a nonempty v8 image with a selectable meta and complete,
+verified contents (including an empty v8 image); or a supported v7 image that
+migrates completely. It stages a verified image before replacing anything, then
+publishes and copies it with old-or-new recovery. OPFS alone accepts a sole valid
+meta despite newer data pages; native STG-033 recovery is unchanged. See
+[the browser durability contract](durability#browser-storage-modes).
 <!-- @end -->
 
 ### Language bindings (separate repositories)
