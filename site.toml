@@ -58,6 +58,11 @@ tag = "v2.0.11"
 date = "2026-10-26"
 
 [[version]]
+tag = "v2.0.12"
+released = false
+git_ref = "origin/main"
+
+[[version]]
 tag = "v3.0.0"
 released = false
 git_ref = "origin/v3"

@@ -612,6 +612,18 @@ after meta rot. See [durability and recovery](durability#browser-storage-modes).
 - **Single-threaded**: Runs on the main thread or in a Web Worker; no shared state between workers.
 - **Install**: `npm install @minigraf/browser`
 
+<!-- @range v2.0.12..v3.0.0 -->
+#### Durability when an IndexedDB write fails
+
+`BrowserDb` stores each write in one IndexedDB transaction, and that transaction lands whole or not at all. When it fails (for example `QuotaExceededError`), the write rejects with `[STG-048]` and the handle is *failed*: every later `execute` write, `checkpoint` and `importGraph` rejects with `[STG-046]` and changes nothing. Queries, rule registration and `exportGraph()` keep working. `exportGraph()` exports the in-memory state, including the rejected write, so it does not acknowledge durability. Reopen the database to recover: it holds the state from before the failed write, never part of it ([#894](https://github.com/project-minigraf/minigraf/issues/894)).
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
+#### Durability when an IndexedDB write fails
+
+`BrowserDb` stores each write in one IndexedDB transaction, and that transaction lands whole or not at all. When it fails (for example `QuotaExceededError`), the write rejects with `[STG-048]` and the handle is *failed*: every later `execute` write, `commit()`, `checkpoint` and `importGraph` rejects with `[STG-046]`, starts no IndexedDB transaction and changes nothing, as on native and OPFS. A flush waits for the flushes of earlier writes and is never sent if one of them failed; `checkpoint()` resolves only once every earlier write is stored. Queries, cursors, prepared queries, rule registration, `beginWrite()` staging, `exportGraph()` and `close()` keep working. Work applied in memory before the failure stays readable, and `exportGraph()` includes it, so it does not acknowledge durability. Reopen the database to recover: it holds the state from before the failed write, never part of it. A failed `BrowserDb.open()` migration write rejects with `[STG-048]` and returns no handle ([#894](https://github.com/project-minigraf/minigraf/issues/894)).
+<!-- @end -->
+
 ---
 
 ### Server-side WASM (WASI) — Phase 8.1b
