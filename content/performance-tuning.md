@@ -393,6 +393,15 @@ excluded. These manual measurements do not expand nightly benchmark coverage.
 <!-- @end -->
 
 <!-- @since v3.0.0 -->
+Nightly benchmark coverage on v3 includes 14 JVM and 3 WASI binding IDs, each on its
+own [Bencher](https://bencher.dev/perf/minigraf) history. The iOS simulator and the
+Android emulator were compared with matched physical Device Farm runs and neither
+qualified for any case (closeness, repeatability or detection failed), so there is no
+mobile nightly lane. See the
+[binding benchmark contract](https://github.com/project-minigraf/minigraf/blob/v3/docs/BINDING_BENCHMARKS.md).
+<!-- @end -->
+
+<!-- @since v3.0.0 -->
 The [manual shape sweep](https://github.com/project-minigraf/minigraf/blob/44e2d91c11568cc0d13189ad62cd6f4f2777ebd9/docs/benchmarks/841-shape-sweeps/README.md)
 separates sorting, partition layouts, set cardinalities, reference distributions,
 and sustained snapshot/log-reader retention. Read its pinned revision, storage
