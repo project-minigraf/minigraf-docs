@@ -226,8 +226,19 @@ A `:find` variable that no `:where` clause binds is not rejected: the query retu
 ### UUID and timestamp validation
 
 - `#uuid "..."` — the string must be a valid RFC 4122 UUID (e.g. `"550e8400-e29b-41d4-a716-446655440000"`).
+<!-- @until v3.0.0 -->
 - `:as-of "..."`, `:valid-at "..."`, `:valid-from "..."`, `:valid-to "..."` — the string must be a
   parseable ISO 8601 UTC timestamp (e.g. `"2024-01-15T10:00:00Z"`).
+<!-- @end -->
+<!-- @since v3.0.0 -->
+- `:as-of "..."`, `:valid-at "..."`, `:valid-from "..."`, `:valid-to "..."` — the string must be
+  exactly `YYYY-MM-DD` (midnight UTC), `YYYY-MM-DDTHH:MM:SSZ` or `YYYY-MM-DDTHH:MM:SS.fZ`
+  (e.g. `"2024-01-15"`, `"2024-01-15T10:00:00Z"`, `"2024-01-15T10:00:00.250Z"`): a four-digit
+  year 0000–9999, two digits for every other field, uppercase `T` and `Z`, and 1–9 fractional
+  digits, truncated to milliseconds. Anything else fails with `INT-004`, including timezone
+  offsets, lowercase `z`, a `UTC` suffix, whitespace, single-digit fields, two-digit or negative
+  years and leap seconds (`:60`). Earlier releases also accepted some of these forms.
+<!-- @end -->
 - `:as-of N` — the integer counter must be non-negative.
 
 ### Bind slots in attribute position
