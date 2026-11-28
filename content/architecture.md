@@ -218,6 +218,38 @@ In v7, `EavtKey` and `AevtKey` carry no value, so two values of one attribute wr
 Each index entry *is* the whole fact, as a byte-comparable key, so a query never reads a separate fact page. See [File format (v8)](#file-format-v8) for the key layout. Two values of one attribute written in the same transaction are separate keys, and an assertion and a retraction of the same value in one transaction stay apart.
 <!-- @end -->
 
+<!-- @since v3.0.0 -->
+### Incoming-reference access
+
+The write-transaction [incoming-reference lookup](cookbook-application-workflows#bounded-incoming-reference-discovery)
+uses target-keyed access in every storage layer. Pending (uncheckpointed) facts
+and small-transaction staged facts each maintain `RefPositions`, a
+`HashMap<EntityId, Vec<usize>>` mapping a target UUID to positions of scalar Ref
+facts. Positions are recorded at insertion, including WAL replay into pending
+storage and accepted statements into staging. Lookup borrows those facts directly;
+it does not clone all staged facts or build an index at lookup time. This also
+covers in-memory transactions, which do not promote to large transactions.
+
+For durable data and large-transaction working trees, a dedicated raw VAET walk
+seeks the target prefix and inspects only that target's stored versions, charging
+each inspected entry to the shared records budget before decoding it. Source
+UUIDs and attributes are decoded through the selected reader's dictionary, so
+entities and attributes first written in the working trees can be returned.
+Successful promotion releases the staged facts and their position index; the
+working trees supply committed, pending and earlier completed statement data.
+Checkpoint publication replaces the pending store together with the committed
+reader.
+
+The lookup resolves the newest version per `(source, attribute)` with staged
+facts over pending facts over durable facts, tied retractions winning and valid
+time ignored. It resolves all participating target ranges before checking the
+links budget, and returns either the complete set or exhaustion without a partial
+list. Enumeration is confined to the target's own history; unrelated facts are
+not scanned, copied or re-indexed for the lookup. Tree navigation, dictionary
+lookups and prefix-end checks are outside `records_examined`, so that count is
+a fact-version budget rather than a bound on page reads or elapsed time.
+<!-- @end -->
+
 ---
 
 <!-- @until v3.0.0 -->
